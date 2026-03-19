@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.env
+seen_trades.json
+api_creds.json
