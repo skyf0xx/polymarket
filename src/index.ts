@@ -1,181 +1,176 @@
 // src/index.ts
-// Entry point: initialise CLOB client, run the poll → execute loop.
+// Entry point — init CLOB client, instantiate all modules, run startup sequence.
 
-import "dotenv/config";
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { ClobClient } from "@polymarket/clob-client";
-import { Wallet } from "ethers";
-import { pollNewTrades, getUsdcBalance, type TargetTrade } from "./poller.js";
-import { executeTrade, type SizingConfig } from "./executor.js";
+import { ethers } from "ethers";
+import { ClobClient, ApiKeyCreds } from "@polymarket/clob-client";
+import { config } from "./config.js";
+import { createLogger } from "./logger.js";
+import { OddsStream } from "./odds-stream.js";
+import { PriceCache } from "./price-cache.js";
+import {
+  MarketMatcher,
+  fetchPolymarketSportsMarkets,
+} from "./market-matcher.js";
+import { PositionTracker } from "./position-tracker.js";
+import { Coordinator } from "./coordinator.js";
+import { UserStream } from "./user-stream.js";
+import { getUsdcBalance } from "./wallet.js";
+import { readFileSync, existsSync, writeFileSync, renameSync } from "fs";
 
-const CREDS_FILE = "./api_creds.json";
+const log = createLogger("main");
 
-// ── Config from env ──────────────────────────────────────────────
-function env(key: string, fallback?: string): string {
-  const v = process.env[key] ?? fallback;
-  if (!v) {
-    console.error(`Missing env var: ${key}. See .env.example`);
-    process.exit(1);
-  }
-  return v;
-}
+const CHAIN_ID = 137; // Polygon mainnet
 
-const PRIVATE_KEY = env("PRIVATE_KEY");
-const FUNDER_ADDRESS = env("FUNDER_ADDRESS");
-const SIGNATURE_TYPE = Number(env("SIGNATURE_TYPE", "2"));
-const TARGET_WALLET = env("TARGET_WALLET");
-const SIZING_MODE = env("SIZING_MODE", "fixed");
-const SIZING_VALUE = Number(env("SIZING_VALUE", "10"));
-const POLL_INTERVAL_MS = Number(env("POLL_INTERVAL_MS", "300000"));
-const MAX_SLIPPAGE = Number(env("MAX_SLIPPAGE", "0.05"));
-const MY_BANKROLL = process.env["MY_BANKROLL"]
-  ? Number(process.env["MY_BANKROLL"])
-  : null;
+// ── CLOB Client Setup ─────────────────────────────────────────────
 
-// ── Helpers ───────────────────────────────────────────────────────
 function makeClobClient(
-  wallet: Wallet,
-  signatureType: number,
-  funderAddress: string,
-  creds?: any,
+  signer: ethers.Wallet,
+  creds?: ApiKeyCreds,
 ): ClobClient {
   return new ClobClient(
-    "https://clob.polymarket.com",
-    137,
-    wallet,
+    config.clobApiUrl,
+    CHAIN_ID,
+    signer,
     creds,
-    signatureType,
-    funderAddress,
+    config.signatureType,
+    config.funderAddress,
   );
 }
 
-async function createAuthedClient(
-  wallet: Wallet,
-  signatureType: number,
-  funderAddress: string,
-): Promise<ClobClient> {
-  if (existsSync(CREDS_FILE)) {
+async function initClobClient(): Promise<ClobClient> {
+  const provider = new ethers.providers.JsonRpcProvider(config.polygonRpc);
+  const signer = new ethers.Wallet(config.privateKey, provider);
+
+  log.info(`Signer address: ${signer.address}`);
+  log.info(`Funder address: ${config.funderAddress}`);
+
+  if (existsSync(config.credsFile)) {
     try {
-      const creds = JSON.parse(readFileSync(CREDS_FILE, "utf-8"));
-      console.log(`   Loaded API credentials from ${CREDS_FILE} (key: ${creds.key.slice(0, 8)}...)`);
-      return makeClobClient(wallet, signatureType, funderAddress, creds);
+      const creds = JSON.parse(readFileSync(config.credsFile, "utf-8")) as ApiKeyCreds;
+      log.info(`Loaded API credentials from ${config.credsFile}`);
+      return makeClobClient(signer, creds);
     } catch {
-      console.warn(`   Could not read ${CREDS_FILE}, re-deriving...`);
+      log.warn("Could not parse creds file, will create new credentials");
     }
   }
 
-  console.log("   Deriving API credentials...");
-  const creds = await makeClobClient(
-    wallet,
-    signatureType,
-    funderAddress,
-  ).createOrDeriveApiKey();
-  writeFileSync(CREDS_FILE, JSON.stringify(creds, null, 2));
-  console.log(`   API key: ${creds.key.slice(0, 8)}... (saved to ${CREDS_FILE})`);
-  return makeClobClient(wallet, signatureType, funderAddress, creds);
+  // Derive/create new credentials
+  log.info("Deriving API credentials...");
+  const creds = await makeClobClient(signer).createOrDeriveApiKey();
+  const tmp = config.credsFile + ".tmp";
+  writeFileSync(tmp, JSON.stringify(creds, null, 2));
+  renameSync(tmp, config.credsFile);
+  log.info("API credentials created and saved");
+  return makeClobClient(signer, creds);
 }
 
-/** Keep only the first trade per (asset, side) pair within a batch. */
-function deduplicateTrades(trades: TargetTrade[]): TargetTrade[] {
-  const seen = new Set<string>();
-  return trades.filter((t) => {
-    const key = `${t.asset}:${t.side}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+// ── Health Logging ────────────────────────────────────────────────
+
+function startHealthLogging(
+  odds: OddsStream,
+  prices: PriceCache,
+  matcher: MarketMatcher,
+  positions: PositionTracker,
+  coordinator: Coordinator,
+): ReturnType<typeof setInterval> {
+  return setInterval(() => {
+    log.info("HEALTH", {
+      oddsEvents: odds.size,
+      priceTokens: prices.size,
+      matches: matcher.size,
+      tradeableMatches: matcher.getTradeableMatches().length,
+      openPositions: positions.size,
+      totalDeployed: positions.getTotalDeployed(),
+      dryRun: config.dryRun,
+      bankroll: coordinator.bankroll,
+    });
+  }, 60_000); // every minute
 }
 
-// ── Main ─────────────────────────────────────────────────────────
-async function main() {
-  console.log("🤖 Polymarket Copy Trader");
-  console.log(`   Target: ${TARGET_WALLET}`);
-  console.log(`   Sizing: ${SIZING_MODE} = ${SIZING_VALUE}`);
-  console.log(`   Poll interval: ${POLL_INTERVAL_MS / 1000}s`);
-  console.log(`   Max slippage: ${MAX_SLIPPAGE}`);
-  console.log();
+// ── Main ──────────────────────────────────────────────────────────
 
-  // 1. Create wallet signer
-  const wallet = new Wallet(PRIVATE_KEY);
-  console.log(`   Your signer: ${wallet.address}`);
-  console.log(`   Funder: ${FUNDER_ADDRESS}`);
-  console.log();
+async function main(): Promise<void> {
+  log.info("═══════════════════════════════════════════════");
+  log.info("  Edge Detection Bot — Starting Up");
+  log.info(`  DRY_RUN=${config.dryRun}`);
+  log.info(`  Sports: ${config.sports.join(", ")}`);
+  log.info(`  Min edge: ${(config.minEdge * 100).toFixed(1)}%`);
+  log.info(`  Kelly fraction: ${config.kellyFraction}`);
+  log.info("═══════════════════════════════════════════════");
 
-  // 2. Create CLOB client & derive API creds
-  const authedClient = await createAuthedClient(
-    wallet,
-    SIGNATURE_TYPE,
-    FUNDER_ADDRESS,
-  );
+  // 1. Init CLOB client
+  const client = await initClobClient();
 
-  // 3. Initial poll (mark existing trades as seen, don't execute)
-  console.log("\n   Initial sync — marking existing trades as seen...");
-  const initial = await pollNewTrades(TARGET_WALLET);
-  console.log(
-    `   Marked ${initial.length} existing trades. Will only copy NEW trades.\n`,
-  );
-
-  // 4. Verify bankroll is fetchable before entering poll loop
-  if (SIZING_MODE === "percent") {
-    console.log("   Verifying bankroll (percent mode)...");
-    const bankroll = MY_BANKROLL ?? (await getUsdcBalance(FUNDER_ADDRESS));
-    if (!bankroll || bankroll <= 0) {
-      console.error(
-        `   ERROR: Could not fetch bankroll for FUNDER_ADDRESS=${FUNDER_ADDRESS}.\n` +
-          `   Either the address has no USDC on Polymarket, or the API is unreachable.\n` +
-          `   Tip: set MY_BANKROLL=<amount> in .env to override.`,
-      );
-      process.exit(1);
-    }
-    console.log(`   Bankroll: $${bankroll.toFixed(2)} ✓\n`);
+  // 2. Fetch on-chain bankroll
+  log.info("Fetching on-chain USDC balance...");
+  const bankroll = await getUsdcBalance();
+  if (bankroll === null || bankroll <= 0) {
+    log.error("Could not fetch USDC balance or balance is zero — aborting");
+    process.exit(1);
   }
+  log.info(`  Bankroll: $${bankroll.toFixed(2)}`);
 
-  // 5. Poll loop
-  console.log("   Entering poll loop...\n");
+  // 3. Instantiate modules
+  const odds = new OddsStream();
+  const prices = new PriceCache();
+  const matcher = new MarketMatcher();
+  const positions = new PositionTracker();
+  const coordinator = new Coordinator(client, odds, prices, matcher, positions, bankroll);
 
-  const tick = async () => {
-    try {
-      const trades = await pollNewTrades(TARGET_WALLET);
-      if (trades.length === 0) {
-        console.log(`[${new Date().toISOString()}] No new trades`);
-        return;
-      }
+  // 4. Fetch Polymarket sports markets from Gamma
+  log.info("Fetching active sports markets from Gamma...");
+  const polymarkets = await fetchPolymarketSportsMarkets();
+  log.info(`Found ${polymarkets.length} active sports market(s)`);
 
-      // Build sizing config. For percent mode, refresh portfolio values each tick.
-      const sizing: SizingConfig = {
-        mode: SIZING_MODE as SizingConfig["mode"],
-        value: SIZING_VALUE,
-        targetValue: null,
-        myBankroll: null,
-      };
+  // 5. Start odds stream (REST hydrate + WS connect)
+  log.info("Starting odds stream...");
+  await odds.start();
 
-      if (sizing.mode === "percent") {
-        sizing.targetValue = await getUsdcBalance(TARGET_WALLET);
-        sizing.myBankroll =
-          MY_BANKROLL ?? (await getUsdcBalance(FUNDER_ADDRESS));
-        console.log(
-          `[${new Date().toISOString()}] Percent mode — target portfolio: $${sizing.targetValue?.toFixed(2) ?? "?"}, my bankroll: $${sizing.myBankroll?.toFixed(2) ?? "?"}`,
-        );
-      }
+  // 6. Run initial match cycle
+  log.info("Running initial market match cycle...");
+  const { newMatches, total } = await matcher.runMatchCycle(
+    odds.getAllLines(),
+    polymarkets,
+  );
+  log.info(`Initial matching: ${newMatches} new, ${total} total matches`);
 
-      const uniqueTrades = deduplicateTrades(trades);
-      const skipped = trades.length - uniqueTrades.length;
-      console.log(
-        `[${new Date().toISOString()}] ${trades.length} new trade(s) detected` +
-          (skipped > 0 ? `, ${skipped} duplicate(s) skipped` : "") + ":",
-      );
-      for (const t of uniqueTrades) {
-        await executeTrade(authedClient, t, sizing, MAX_SLIPPAGE);
-      }
-    } catch (err: any) {
-      console.error(`[poll error]`, err.message ?? err);
-    }
+  // 7. Start price cache with matched token IDs
+  const tokenIds = matcher.getAllTokenIds();
+  log.info(`Starting price cache for ${tokenIds.length} token(s)...`);
+  await prices.start(tokenIds);
+
+  // 8. Start coordinator (wires event listeners + maintenance timer)
+  coordinator.start();
+
+  // 9. Start user stream (authenticated WS for trade confirmations)
+  const userStream = new UserStream(positions, matcher, config.credsFile);
+  userStream.start();
+
+  // 10. Health logging
+  const healthTimer = startHealthLogging(odds, prices, matcher, positions, coordinator);
+
+  log.info("═══════════════════════════════════════════════");
+  log.info("  Bot is live. Listening for edge signals.");
+  log.info("═══════════════════════════════════════════════");
+
+  // ── Graceful Shutdown ───────────────────────────────────────────
+
+  const shutdown = (signal: string) => {
+    log.info(`Received ${signal}, shutting down...`);
+    clearInterval(healthTimer);
+    coordinator.destroy();
+    userStream.destroy();
+    prices.destroy();
+    odds.destroy();
+    log.info("Shutdown complete");
+    process.exit(0);
   };
 
-  setInterval(tick, POLL_INTERVAL_MS);
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
 main().catch((err) => {
-  console.error("Fatal:", err);
+  log.error(`Fatal startup error: ${err.message ?? err}`);
   process.exit(1);
 });
