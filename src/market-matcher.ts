@@ -2,7 +2,13 @@
 // Two-tier matching: local cache (fast path) + LLM fallback (new events).
 // Maps Polymarket sports markets to Odds API events.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+} from "fs";
 import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
@@ -35,9 +41,7 @@ export class MarketMatcher {
 
   /** Look up a match by Odds API event ID. Returns all matching entries. */
   getMatchesByEvent(eventId: string): MatchEntry[] {
-    return [...this.table.values()].filter(
-      (m) => m.oddsApiEventId === eventId,
-    );
+    return [...this.table.values()].filter((m) => m.oddsApiEventId === eventId);
   }
 
   /** Get all high-confidence, active matches. */
@@ -151,7 +155,9 @@ export class MarketMatcher {
 
       this.saveToDisk();
       this.rebuildTokenIndex();
-      log.info(`LLM returned ${matches.length} match(es), ${newCount} validated`);
+      log.info(
+        `LLM returned ${matches.length} match(es), ${newCount} validated`,
+      );
 
       return { newMatches: newCount, total: this.table.size };
     } catch (err: unknown) {
@@ -211,7 +217,9 @@ export class MarketMatcher {
       if (entry.active && !activeSlugs.has(slug)) {
         entry.active = false;
         changed = true;
-        log.info(`Market ${slug} no longer in Gamma active list — marked inactive`);
+        log.info(
+          `Market ${slug} no longer in Gamma active list — marked inactive`,
+        );
       }
     }
 
@@ -231,8 +239,23 @@ export class MarketMatcher {
   // ── LLM Matching (Tier 2) ──────────────────────────────────────
 
   private async callLlmMatcher(
-    oddsEvents: Array<{ id: string; sport: string; home: string; away: string; time: string; marketTypes: string[] }>,
-    polymarkets: Array<{ slug: string; question: string; outcomes: string[]; tokenIds: string[]; groupItemTitle: string | null; endDate: string; active: boolean }>,
+    oddsEvents: Array<{
+      id: string;
+      sport: string;
+      home: string;
+      away: string;
+      time: string;
+      marketTypes: string[];
+    }>,
+    polymarkets: Array<{
+      slug: string;
+      question: string;
+      outcomes: string[];
+      tokenIds: string[];
+      groupItemTitle: string | null;
+      endDate: string;
+      active: boolean;
+    }>,
   ): Promise<MatchEntry[]> {
     if (!config.anthropicApiKey) {
       log.warn("No ANTHROPIC_API_KEY — skipping LLM matching");
@@ -241,27 +264,13 @@ export class MarketMatcher {
 
     const systemPrompt = `You are a sports event matching engine. Given a list of sportsbook events and Polymarket prediction markets, match each Polymarket market to its corresponding sportsbook event.
 
-Return ONLY a valid JSON array. Each element:
-{
-  "slug": "<polymarket slug>",
-  "oddsApiEventId": "<odds api event id>",
-  "sportKey": "<sport key>",
-  "homeTeam": "<home team full name>",
-  "awayTeam": "<away team full name>",
-  "outcomeMap": { "Yes": "<team/side that Yes maps to>", "No": "<team/side that No maps to>" },
-  "marketType": "h2h" | "spreads" | "totals",
-  "point": <number or null>,
-  "confidence": "high" | "medium" | "low"
-}
-
 Rules:
 - Match by team names, date proximity, and sport
 - Map "Yes"/"No" outcomes to the correct team/side
 - For "Will X beat Y?" questions, "Yes" maps to X
 - For totals, "Yes" typically maps to "Over"
 - Set confidence=high only when team names clearly match and dates align
-- If no match exists, omit that market entirely
-- Return ONLY the JSON array, no markdown, no explanation`;
+- If no match exists, omit that market from the matches array entirely`;
 
     const userPrompt = `Sportsbook events:\n${JSON.stringify(oddsEvents, null, 2)}\n\nPolymarket markets:\n${JSON.stringify(polymarkets, null, 2)}`;
 
@@ -277,6 +286,85 @@ Rules:
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
+        tools: [
+          {
+            name: "submit_matches",
+            description:
+              "Submit the list of matched Polymarket markets to sportsbook events",
+            input_schema: {
+              type: "object",
+              properties: {
+                matches: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      slug: {
+                        type: "string",
+                        description: "Polymarket market slug",
+                      },
+                      oddsApiEventId: {
+                        type: "string",
+                        description: "Odds API event ID",
+                      },
+                      sportKey: {
+                        type: "string",
+                        description: "Odds API sport key",
+                      },
+                      homeTeam: {
+                        type: "string",
+                        description: "Full home team name",
+                      },
+                      awayTeam: {
+                        type: "string",
+                        description: "Full away team name",
+                      },
+                      outcomeMap: {
+                        type: "object",
+                        properties: {
+                          Yes: {
+                            type: "string",
+                            description: "Team/side that Yes outcome maps to",
+                          },
+                          No: {
+                            type: "string",
+                            description: "Team/side that No outcome maps to",
+                          },
+                        },
+                        required: ["Yes", "No"],
+                      },
+                      marketType: {
+                        type: "string",
+                        enum: ["h2h", "spreads", "totals"],
+                      },
+                      point: {
+                        type: ["number", "null"],
+                        description:
+                          "Spread or total point value, null for h2h",
+                      },
+                      confidence: {
+                        type: "string",
+                        enum: ["high", "medium", "low"],
+                      },
+                    },
+                    required: [
+                      "slug",
+                      "oddsApiEventId",
+                      "sportKey",
+                      "homeTeam",
+                      "awayTeam",
+                      "outcomeMap",
+                      "marketType",
+                      "confidence",
+                    ],
+                  },
+                },
+              },
+              required: ["matches"],
+            },
+          },
+        ],
+        tool_choice: { type: "tool", name: "submit_matches" },
       }),
     });
 
@@ -285,14 +373,15 @@ Rules:
       throw new Error(`Anthropic API error ${res.status}: ${body}`);
     }
 
-    const data: { content?: Array<{ text?: string }> } = await res.json();
-    const text: string = (data.content ?? [])
-      .map((c) => c.text ?? "")
-      .join("")
-      .trim();
-
-    // Parse — strip any markdown fencing
-    const clean = text.replace(/```json\s*|```\s*/g, "").trim();
+    const data: {
+      content?: Array<{ type: string; input?: { matches: unknown[] } }>;
+    } = await res.json();
+    const block = data.content?.find((c) => c.type === "tool_use");
+    if (!block?.input) {
+      throw new Error(
+        `Unexpected Anthropic response shape: ${JSON.stringify(data.content)}`,
+      );
+    }
 
     interface LlmMatchResult {
       slug: string;
@@ -306,7 +395,7 @@ Rules:
       confidence: MatchConfidence;
     }
 
-    const raw: LlmMatchResult[] = JSON.parse(clean);
+    const raw: LlmMatchResult[] = block.input.matches as LlmMatchResult[];
 
     // Convert to MatchEntry objects
     const now = Date.now();
@@ -321,28 +410,32 @@ Rules:
       const noIdx = pm.outcomes?.indexOf("No") ?? -1;
 
       if (yesIdx === -1 || noIdx === -1) {
-        log.warn(`LLM match "${r.slug}" missing Yes/No outcomes (got ${JSON.stringify(pm.outcomes)}), skipping`);
+        log.warn(
+          `LLM match "${r.slug}" missing Yes/No outcomes (got ${JSON.stringify(pm.outcomes)}), skipping`,
+        );
         return [];
       }
 
-      return [{
-        slug: r.slug,
-        oddsApiEventId: r.oddsApiEventId,
-        sportKey: r.sportKey,
-        homeTeam: r.homeTeam,
-        awayTeam: r.awayTeam,
-        outcomeMap: r.outcomeMap,
-        marketType: r.marketType,
-        point: r.point ?? undefined,
-        confidence: r.confidence,
-        matchedAt: now,
-        commence: 0, // overridden in runMatchCycle once oddsLine is found
-        active: pm.active, // overridden in runMatchCycle from full market data
-        tokenIds: {
-          yes: pm.tokenIds?.[yesIdx] ?? "",
-          no: pm.tokenIds?.[noIdx] ?? "",
+      return [
+        {
+          slug: r.slug,
+          oddsApiEventId: r.oddsApiEventId,
+          sportKey: r.sportKey,
+          homeTeam: r.homeTeam,
+          awayTeam: r.awayTeam,
+          outcomeMap: r.outcomeMap,
+          marketType: r.marketType,
+          point: r.point ?? undefined,
+          confidence: r.confidence,
+          matchedAt: now,
+          commence: 0, // overridden in runMatchCycle once oddsLine is found
+          active: pm.active, // overridden in runMatchCycle from full market data
+          tokenIds: {
+            yes: pm.tokenIds?.[yesIdx] ?? "",
+            no: pm.tokenIds?.[noIdx] ?? "",
+          },
         },
-      }];
+      ];
     });
   }
 
@@ -412,11 +505,20 @@ export async function fetchPolymarketSportsMarkets(): Promise<
       all.push({
         slug: m.slug,
         question: m.question,
-        outcomes: typeof m.outcomes === "string" ? JSON.parse(m.outcomes) : m.outcomes ?? ["Yes", "No"],
-        outcomePrices: typeof m.outcomePrices === "string" ? JSON.parse(m.outcomePrices) : m.outcomePrices ?? ["0.5", "0.5"],
-        tokenIds: typeof m.clobTokenIds === "string"
-          ? JSON.parse(m.clobTokenIds)
-          : Array.isArray(m.clobTokenIds) ? m.clobTokenIds : [],
+        outcomes:
+          typeof m.outcomes === "string"
+            ? JSON.parse(m.outcomes)
+            : (m.outcomes ?? ["Yes", "No"]),
+        outcomePrices:
+          typeof m.outcomePrices === "string"
+            ? JSON.parse(m.outcomePrices)
+            : (m.outcomePrices ?? ["0.5", "0.5"]),
+        tokenIds:
+          typeof m.clobTokenIds === "string"
+            ? JSON.parse(m.clobTokenIds)
+            : Array.isArray(m.clobTokenIds)
+              ? m.clobTokenIds
+              : [],
         endDate: m.endDate,
         active: m.active,
         closed: m.closed,
