@@ -67,9 +67,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   // Flow: GET /v3/events (get IDs) → GET /v3/odds/multi in batches of 10
 
   private async hydrateFromRest(): Promise<void> {
-    log.info(`Hydrating odds for ${config.sports.length} sport(s)...`);
+    log.info(`Hydrating odds for ${config.oddsApiSports.length} sport(s)...`);
 
-    for (const sport of config.sports) {
+    for (const sport of config.oddsApiSports) {
       try {
         // Step 1: fetch all prematch event IDs for the sport
         const eventsUrl =
@@ -137,7 +137,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private connectWs(): void {
     if (this.destroyed) return;
 
-    const sports = config.sports.join(",");
+    const sports = config.oddsApiSports.join(",");
     const url =
       `${config.oddsApiWsUrl}` +
       `?apiKey=${config.oddsApiKey}` +

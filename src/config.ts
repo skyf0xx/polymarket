@@ -58,8 +58,10 @@ export const config = {
   ),
   oddsApiRestUrl: env("ODDS_API_REST_URL", "https://api.odds-api.io"),
   bookmakerId: env("BOOKMAKER_ID", ""),
-  sports: envList("SPORTS", ["basketball", "football"]),
+  oddsApiSports: envList("ODDS_API_SPORTS", []),
+
   // Polymarket
+  polymarketSportsTags: envList("POLYMARKET_SPORTS_TAGS", ["sports"]),
   clobApiUrl: "https://clob.polymarket.com",
   gammaApiUrl: "https://gamma-api.polymarket.com",
   polyWsUrl:
