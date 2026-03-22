@@ -94,7 +94,7 @@ async function main(): Promise<void> {
   log.info("  Edge Detection Bot — Starting Up");
   log.info(`  DRY_RUN=${config.dryRun}`);
   log.info(`  Odds API sports: ${config.oddsApiSports.join(", ")}`);
-  log.info(`  Polymarket tags: ${config.polymarketSportsTags.join(", ")}`);
+  log.info(`  Polymarket sports types: ${config.polymarketSportsTypes.join(", ")}`);
   log.info(`  Min edge: ${(config.minEdge * 100).toFixed(1)}%`);
   log.info(`  Kelly fraction: ${config.kellyFraction}`);
   log.info("═══════════════════════════════════════════════");

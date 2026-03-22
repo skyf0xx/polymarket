@@ -493,7 +493,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 // ── Gamma API Helper ──────────────────────────────────────────────
 
-/** Fetch active sports markets from the Gamma API (paginated, per tag). */
+/** Fetch active sports markets from the Gamma API (paginated). */
 export async function fetchPolymarketSportsMarkets(): Promise<
   PolymarketMarket[]
 > {
@@ -501,15 +501,38 @@ export async function fetchPolymarketSportsMarkets(): Promise<
   const all: PolymarketMarket[] = [];
   const seenSlugs = new Set<string>();
 
-  for (const tag of config.polymarketSportsTags) {
-    let offset = 0;
+  // Build repeated params: sports_market_types=moneyline&sports_market_types=spreads&...
+  const typeParams = config.polymarketSportsTypes
+    .map((t) => `sports_market_types=${encodeURIComponent(t)}`)
+    .join("&");
+
+  // Tag IDs filter specific leagues (e.g., 745=NBA, 82=EPL)
+  const tagIds = config.polymarketTagIds;
+  let offset = 0;
+
+  // If multiple tag IDs, fetch per-tag (API accepts single tag_id per request)
+  const tagQueries = tagIds.length > 0 ? tagIds : [null];
+
+  for (const tagId of tagQueries) {
+    offset = 0;
     let tagCount = 0;
 
     while (true) {
-      const url = `${config.gammaApiUrl}/markets?tag=${encodeURIComponent(tag)}&active=true&closed=false&limit=${PAGE_SIZE}&offset=${offset}`;
+      let url =
+        `${config.gammaApiUrl}/markets` +
+        `?${typeParams}` +
+        `&closed=false` +
+        `&liquidity_num_min=${config.polymarketMinLiquidity}` +
+        `&limit=${PAGE_SIZE}` +
+        `&offset=${offset}`;
+
+      if (tagId) {
+        url += `&tag_id=${tagId}`;
+      }
+
       const res = await fetch(url);
       if (!res.ok) {
-        log.error(`Gamma API error for tag "${tag}": ${res.status}`);
+        log.error(`Gamma API error (tag_id=${tagId ?? "all"}): ${res.status}`);
         break;
       }
 
@@ -562,8 +585,9 @@ export async function fetchPolymarketSportsMarkets(): Promise<
       offset += PAGE_SIZE;
     }
 
-    log.info(`Gamma: ${tagCount} market(s) for tag "${tag}"`);
+    log.info(`Gamma: ${tagCount} market(s) for tag_id=${tagId ?? "all"}`);
   }
 
+  log.info(`Gamma total: ${all.length} market(s) (types=[${config.polymarketSportsTypes}], min_liq=${config.polymarketMinLiquidity})`);
   return all;
 }
