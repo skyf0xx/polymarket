@@ -3,3 +3,4 @@ dist/
 .env
 seen_trades.json
 api_creds.json
+data/match-table.json
