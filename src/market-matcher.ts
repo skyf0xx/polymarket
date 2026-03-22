@@ -84,7 +84,6 @@ export class MarketMatcher {
     polymarkets: PolymarketMarket[],
   ): Promise<{ newMatches: number; total: number }> {
     const unmatched: PolymarketMarket[] = [];
-
     for (const pm of polymarkets) {
       if (this.table.has(pm.slug)) continue;
       unmatched.push(pm);
@@ -336,8 +335,7 @@ Rules:
                     },
                     point: {
                       type: ["number", "null"],
-                      description:
-                        "Spread or total point value, null for h2h",
+                      description: "Spread or total point value, null for h2h",
                     },
                     confidence: {
                       type: "string",
@@ -588,6 +586,8 @@ export async function fetchPolymarketSportsMarkets(): Promise<
     log.info(`Gamma: ${tagCount} market(s) for tag_id=${tagId ?? "all"}`);
   }
 
-  log.info(`Gamma total: ${all.length} market(s) (types=[${config.polymarketSportsTypes}], min_liq=${config.polymarketMinLiquidity})`);
+  log.info(
+    `Gamma total: ${all.length} market(s) (types=[${config.polymarketSportsTypes}], min_liq=${config.polymarketMinLiquidity})`,
+  );
   return all;
 }
