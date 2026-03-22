@@ -3,6 +3,7 @@
 // Listens for MATCHED trades and records them in the position tracker.
 
 import WebSocket from "ws";
+import { createHmac } from "crypto";
 import { readFileSync } from "fs";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
@@ -14,7 +15,7 @@ const PING_INTERVAL_MS = 10_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 
 interface ApiCreds {
-  apiKey: string;
+  key: string;
   secret: string;
   passphrase: string;
 }
@@ -81,6 +82,7 @@ export class UserStream {
 
     this.ws.on("message", (raw: WebSocket.Data) => {
       const text = raw.toString();
+      log.info(`User WS raw message: ${text}`);
       if (text === "PONG") return;
 
       let events: unknown[];
@@ -98,7 +100,9 @@ export class UserStream {
           this.handleEvent(event);
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          log.error(`Failed to process trade event: ${message}`, { event: event as Record<string, unknown> });
+          log.error(`Failed to process trade event: ${message}`, {
+            event: event as Record<string, unknown>,
+          });
         }
       }
     });
@@ -115,15 +119,27 @@ export class UserStream {
   }
 
   private sendAuth(): void {
-    const msg = JSON.stringify({
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const message = timestamp + "GET" + "/ws/user";
+    const base64Secret = Buffer.from(this.creds.secret, "base64");
+    const sig = createHmac("sha256", base64Secret)
+      .update(message)
+      .digest("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+
+    const payload = {
       type: "user",
       auth: {
-        apiKey: this.creds.apiKey,
+        apiKey: this.creds.key,
         secret: this.creds.secret,
         passphrase: this.creds.passphrase,
+        timestamp,
+        signature: sig,
       },
-    });
-    this.ws?.send(msg);
+    };
+    log.info(`Sending auth: ts=${timestamp} sig=${sig.slice(0, 3)}...`);
+    this.ws?.send(JSON.stringify(payload));
   }
 
   // ── Ping / Keepalive ─────────────────────────────────────────────
@@ -182,12 +198,20 @@ export class UserStream {
       const existing = this.positions.getPosition(tokenId);
       if (existing) {
         // Adding to an existing position
-        this.positions.recordBuy(tokenId, existing.slug, existing.side, price, size);
+        this.positions.recordBuy(
+          tokenId,
+          existing.slug,
+          existing.side,
+          price,
+          size,
+        );
       } else {
         // New position — look up match to get slug and token side
         const match = this.findMatchForToken(tokenId);
         if (!match) {
-          log.warn(`BUY trade matched for unmatched token, cannot record: ${tokenId}`);
+          log.warn(
+            `BUY trade matched for unmatched token, cannot record: ${tokenId}`,
+          );
           return;
         }
         const tokenSide = tokenId === match.tokenIds.yes ? "YES" : "NO";
