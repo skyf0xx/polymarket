@@ -70,64 +70,76 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     log.info(`Hydrating odds for ${config.oddsApiSports.length} sport(s)...`);
 
     for (const sport of config.oddsApiSports) {
-      try {
-        // Step 1: fetch all prematch event IDs for the sport
-        const eventsUrl =
-          `${config.oddsApiRestUrl}/v3/events` +
-          `?apiKey=${config.oddsApiKey}` +
-          `&sport=${sport}` +
-          `&status=prematch`;
-
-        const eventsRes = await fetch(eventsUrl);
-        if (!eventsRes.ok) {
-          log.error(`Events fetch failed for ${sport}: ${eventsRes.status}`);
-          continue;
-        }
-
-        const events: OddsApiIoEvent[] = await eventsRes.json();
-        if (events.length === 0) {
-          log.info(`No prematch events for ${sport}`);
-          continue;
-        }
-
-        // Step 2: fetch odds in batches of 10
-        const ids = events.map((e) => String(e.id));
-        let hydrated = 0;
-
-        for (let i = 0; i < ids.length; i += ODDS_BATCH_SIZE) {
-          const batch = ids.slice(i, i + ODDS_BATCH_SIZE);
-          const oddsUrl =
-            `${config.oddsApiRestUrl}/v3/odds/multi` +
-            `?apiKey=${config.oddsApiKey}` +
-            `&eventIds=${batch.join(",")}` +
-            `&bookmakers=${config.bookmakerId}`;
-
-          const oddsRes = await fetch(oddsUrl);
-          if (!oddsRes.ok) {
-            log.error(
-              `Odds batch fetch failed (${sport}, batch ${Math.floor(i / ODDS_BATCH_SIZE) + 1}): ${oddsRes.status}`,
-            );
-            continue;
-          }
-
-          const oddsData: OddsApiIoOddsResponse[] = await oddsRes.json();
-          for (const item of oddsData) {
-            const line = this.parseOddsResponse(item);
-            if (line) {
-              this.cache.set(line.eventId, line);
-              hydrated++;
-            }
-          }
-        }
-
-        log.info(`Hydrated ${hydrated}/${events.length} events for ${sport}`);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.error(`REST hydration error for ${sport}: ${message}`);
-      }
+      // Hydrate pending (upcoming) events
+      await this.hydrateSportEvents(sport, "pending");
+      // Hydrate live (in-play) events
+      await this.hydrateSportEvents(sport, "live");
     }
 
     log.info(`Odds cache ready: ${this.cache.size} events`);
+  }
+
+  private async hydrateSportEvents(
+    sport: string,
+    status: "pending" | "live",
+  ): Promise<void> {
+    try {
+      // Step 1: fetch event IDs
+      const eventsPath =
+        status === "live" ? "/v3/events/live" : "/v3/events";
+      const eventsUrl =
+        `${config.oddsApiRestUrl}${eventsPath}` +
+        `?apiKey=${config.oddsApiKey}` +
+        `&sport=${sport}` +
+        (status === "pending" ? `&status=pending` : "");
+
+      const eventsRes = await fetch(eventsUrl);
+      if (!eventsRes.ok) {
+        log.error(`Events fetch failed for ${sport} (${status}): ${eventsRes.status}`);
+        return;
+      }
+
+      const events: OddsApiIoEvent[] = await eventsRes.json();
+      if (events.length === 0) {
+        log.info(`No ${status} events for ${sport}`);
+        return;
+      }
+
+      // Step 2: fetch odds in batches of 10
+      const ids = events.map((e) => String(e.id));
+      let hydrated = 0;
+
+      for (let i = 0; i < ids.length; i += ODDS_BATCH_SIZE) {
+        const batch = ids.slice(i, i + ODDS_BATCH_SIZE);
+        const oddsUrl =
+          `${config.oddsApiRestUrl}/v3/odds/multi` +
+          `?apiKey=${config.oddsApiKey}` +
+          `&eventIds=${batch.join(",")}` +
+          `&bookmakers=${config.bookmakerId}`;
+
+        const oddsRes = await fetch(oddsUrl);
+        if (!oddsRes.ok) {
+          log.error(
+            `Odds batch fetch failed (${sport} ${status}, batch ${Math.floor(i / ODDS_BATCH_SIZE) + 1}): ${oddsRes.status}`,
+          );
+          continue;
+        }
+
+        const oddsData: OddsApiIoOddsResponse[] = await oddsRes.json();
+        for (const item of oddsData) {
+          const line = this.parseOddsResponse(item);
+          if (line) {
+            this.cache.set(line.eventId, line);
+            hydrated++;
+          }
+        }
+      }
+
+      log.info(`Hydrated ${hydrated}/${events.length} ${status} events for ${sport}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`REST hydration error for ${sport} (${status}): ${message}`);
+    }
   }
 
   // ── WebSocket Connection ────────────────────────────────────────
