@@ -61,7 +61,9 @@ export const config = {
   oddsApiSports: envList("ODDS_API_SPORTS", []),
 
   // Polymarket
-  polymarketSportsTags: envList("POLYMARKET_SPORTS_TAGS", ["sports"]),
+  polymarketSportsTypes: envList("POLYMARKET_SPORTS_TYPES", ["moneyline", "spreads", "totals"]),
+  polymarketTagIds: envList("POLYMARKET_TAG_IDS", []),
+  polymarketMinLiquidity: envNum("POLYMARKET_MIN_LIQUIDITY", 1000),
   clobApiUrl: "https://clob.polymarket.com",
   gammaApiUrl: "https://gamma-api.polymarket.com",
   polyWsUrl:
