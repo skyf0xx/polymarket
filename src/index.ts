@@ -93,7 +93,8 @@ async function main(): Promise<void> {
   log.info("═══════════════════════════════════════════════");
   log.info("  Edge Detection Bot — Starting Up");
   log.info(`  DRY_RUN=${config.dryRun}`);
-  log.info(`  Sports: ${config.sports.join(", ")}`);
+  log.info(`  Odds API sports: ${config.oddsApiSports.join(", ")}`);
+  log.info(`  Polymarket tags: ${config.polymarketSportsTags.join(", ")}`);
   log.info(`  Min edge: ${(config.minEdge * 100).toFixed(1)}%`);
   log.info(`  Kelly fraction: ${config.kellyFraction}`);
   log.info("═══════════════════════════════════════════════");
@@ -109,6 +110,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   log.info(`  Bankroll: $${bankroll.toFixed(2)}`);
+
+  if (config.oddsApiSports.length === 0) {
+    log.error("ODDS_API_SPORTS is empty — set comma-separated sport keys (e.g. basketball_nba,soccer_epl)");
+    process.exit(1);
+  }
 
   // 3. Instantiate modules
   const odds = new OddsStream();
