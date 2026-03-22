@@ -157,12 +157,17 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     });
 
     this.ws.on("message", (raw: WebSocket.Data) => {
-      try {
-        const msg: OddsWsMessage = JSON.parse(raw.toString());
-        void this.handleMessage(msg);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.warn(`Failed to parse WS message: ${message}`);
+      const text = raw.toString();
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const msg: OddsWsMessage = JSON.parse(trimmed);
+          void this.handleMessage(msg);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.warn(`Failed to parse WS message: ${message}`);
+        }
       }
     });
 
