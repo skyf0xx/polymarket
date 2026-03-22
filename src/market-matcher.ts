@@ -274,6 +274,99 @@ Rules:
 
     const userPrompt = `Sportsbook events:\n${JSON.stringify(oddsEvents, null, 2)}\n\nPolymarket markets:\n${JSON.stringify(polymarkets, null, 2)}`;
 
+    const reqBody = JSON.stringify({
+      model: config.matcherModel,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+      tools: [
+        {
+          name: "submit_matches",
+          description:
+            "Submit the list of matched Polymarket markets to sportsbook events",
+          input_schema: {
+            type: "object",
+            properties: {
+              matches: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    slug: {
+                      type: "string",
+                      description: "Polymarket market slug",
+                    },
+                    oddsApiEventId: {
+                      type: "string",
+                      description: "Odds API event ID",
+                    },
+                    sportKey: {
+                      type: "string",
+                      description: "Odds API sport key",
+                    },
+                    homeTeam: {
+                      type: "string",
+                      description: "Full home team name",
+                    },
+                    awayTeam: {
+                      type: "string",
+                      description: "Full away team name",
+                    },
+                    outcomeMap: {
+                      type: "object",
+                      properties: {
+                        Yes: {
+                          type: "string",
+                          description: "Team/side that Yes outcome maps to",
+                        },
+                        No: {
+                          type: "string",
+                          description: "Team/side that No outcome maps to",
+                        },
+                      },
+                      required: ["Yes", "No"],
+                    },
+                    marketType: {
+                      type: "string",
+                      enum: ["h2h", "spreads", "totals"],
+                    },
+                    point: {
+                      type: ["number", "null"],
+                      description:
+                        "Spread or total point value, null for h2h",
+                    },
+                    confidence: {
+                      type: "string",
+                      enum: ["high", "medium", "low"],
+                    },
+                  },
+                  required: [
+                    "slug",
+                    "oddsApiEventId",
+                    "sportKey",
+                    "homeTeam",
+                    "awayTeam",
+                    "outcomeMap",
+                    "marketType",
+                    "confidence",
+                  ],
+                },
+              },
+            },
+            required: ["matches"],
+          },
+        },
+      ],
+      tool_choice: { type: "tool", name: "submit_matches" },
+    });
+
+    log.info(
+      `LLM request: ${oddsEvents.length} events, ${polymarkets.length} markets, payload ${(reqBody.length / 1024).toFixed(1)}KB`,
+    );
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout
+
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -281,96 +374,13 @@ Rules:
         "x-api-key": config.anthropicApiKey,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({
-        model: config.matcherModel,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-        tools: [
-          {
-            name: "submit_matches",
-            description:
-              "Submit the list of matched Polymarket markets to sportsbook events",
-            input_schema: {
-              type: "object",
-              properties: {
-                matches: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      slug: {
-                        type: "string",
-                        description: "Polymarket market slug",
-                      },
-                      oddsApiEventId: {
-                        type: "string",
-                        description: "Odds API event ID",
-                      },
-                      sportKey: {
-                        type: "string",
-                        description: "Odds API sport key",
-                      },
-                      homeTeam: {
-                        type: "string",
-                        description: "Full home team name",
-                      },
-                      awayTeam: {
-                        type: "string",
-                        description: "Full away team name",
-                      },
-                      outcomeMap: {
-                        type: "object",
-                        properties: {
-                          Yes: {
-                            type: "string",
-                            description: "Team/side that Yes outcome maps to",
-                          },
-                          No: {
-                            type: "string",
-                            description: "Team/side that No outcome maps to",
-                          },
-                        },
-                        required: ["Yes", "No"],
-                      },
-                      marketType: {
-                        type: "string",
-                        enum: ["h2h", "spreads", "totals"],
-                      },
-                      point: {
-                        type: ["number", "null"],
-                        description:
-                          "Spread or total point value, null for h2h",
-                      },
-                      confidence: {
-                        type: "string",
-                        enum: ["high", "medium", "low"],
-                      },
-                    },
-                    required: [
-                      "slug",
-                      "oddsApiEventId",
-                      "sportKey",
-                      "homeTeam",
-                      "awayTeam",
-                      "outcomeMap",
-                      "marketType",
-                      "confidence",
-                    ],
-                  },
-                },
-              },
-              required: ["matches"],
-            },
-          },
-        ],
-        tool_choice: { type: "tool", name: "submit_matches" },
-      }),
-    });
+      body: reqBody,
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
 
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Anthropic API error ${res.status}: ${body}`);
+      const errText = await res.text();
+      throw new Error(`Anthropic API error ${res.status}: ${errText}`);
     }
 
     const data: {
