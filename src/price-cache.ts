@@ -89,6 +89,10 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
   /** Start with initial set of token IDs. REST hydrate then connect WS. */
   async start(tokenIds: string[]): Promise<void> {
     for (const id of tokenIds) this.subscribedTokens.add(id);
+    if (tokenIds.length === 0) {
+      log.info("No tokens to subscribe — deferring WS connection until tokens are added");
+      return;
+    }
     await this.hydrateFromRest(tokenIds);
     this.connectWs();
   }
@@ -105,8 +109,10 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       log.error(`Failed to hydrate new tokens: ${err.message}`),
     );
 
-    // Subscribe on existing WS connection
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    // Connect WS if not yet started, otherwise subscribe on existing connection
+    if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+      this.connectWs();
+    } else if (this.ws.readyState === WebSocket.OPEN) {
       this.sendSubscribe(newIds);
     }
   }
