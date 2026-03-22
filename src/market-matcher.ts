@@ -19,7 +19,6 @@ import type {
   SharpLine,
   PolymarketMarket,
 } from "./types.js";
-
 const log = createLogger("matcher");
 
 const MATCH_TABLE_FILE = join(config.dataDir, "match-table.json");
@@ -77,7 +76,7 @@ export class MarketMatcher {
   /**
    * Run a full match cycle:
    * 1. Check which Polymarket markets are already matched (Tier 1)
-   * 2. Send unmatched ones to the LLM (Tier 2)
+   * 2. Send unmatched ones to the LLM in sequential batches (Tier 2)
    * 3. Validate and persist results
    */
   async runMatchCycle(
@@ -99,72 +98,78 @@ export class MarketMatcher {
       `${unmatched.length} unmatched market(s) — running LLM matcher...`,
     );
 
-    // Build Odds API event list for the LLM
+    // Build slim Odds API event list for the LLM (no marketTypes)
     const oddsEvents = [...oddsLines.values()].map((line) => ({
       id: line.eventId,
       sport: line.sportKey,
       home: line.homeTeam,
       away: line.awayTeam,
       time: new Date(line.commence).toISOString(),
-      marketTypes: Object.keys(line.markets),
     }));
 
-    // Build Polymarket list for the LLM
-    const polyList = unmatched.map((pm) => ({
-      slug: pm.slug,
-      question: pm.question,
-      outcomes: pm.outcomes,
-      tokenIds: pm.tokenIds,
-      groupItemTitle: pm.groupItemTitle ?? null,
-      endDate: pm.endDate,
-      active: pm.active,
-    }));
-
-    try {
-      const matches = await this.callLlmMatcher(oddsEvents, polyList);
-
-      let newCount = 0;
-      for (const match of matches) {
-        // Validate: date within ±24h; also set commence from the odds line
-        const oddsLine = oddsLines.get(match.oddsApiEventId);
-        if (oddsLine) {
-          const timeDiff = Math.abs(
-            oddsLine.commence -
-              new Date(
-                polymarkets.find((p) => p.slug === match.slug)?.endDate ?? 0,
-              ).getTime(),
-          );
-          if (timeDiff > 48 * 60 * 60 * 1000) {
-            log.warn(
-              `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (${(timeDiff / 3600000).toFixed(0)}h)`,
-            );
-            continue;
-          }
-          match.commence = oddsLine.commence;
-        }
-
-        // Set active from the full Polymarket market record
-        const pmFull = polymarkets.find((p) => p.slug === match.slug);
-        if (pmFull) {
-          match.active = pmFull.active;
-        }
-
-        this.table.set(match.slug, match);
-        newCount++;
-      }
-
-      this.saveToDisk();
-      this.rebuildTokenIndex();
-      log.info(
-        `LLM returned ${matches.length} match(es), ${newCount} validated`,
-      );
-
-      return { newMatches: newCount, total: this.table.size };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error(`LLM matcher failed: ${message}`);
+    if (oddsEvents.length === 0) {
+      log.warn("No odds events available — skipping LLM matcher");
       return { newMatches: 0, total: this.table.size };
     }
+
+    // ── Sequential batching: 25 markets per round ──
+    const BATCH_SIZE = 25;
+    const batches = chunk(unmatched, BATCH_SIZE);
+    let newCount = 0;
+    let totalLlmMatches = 0;
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      log.info(
+        `LLM batch ${i + 1}/${batches.length}: ${batch.length} market(s), ${oddsEvents.length} odds events`,
+      );
+
+      try {
+        const matches = await this.callLlmMatcher(oddsEvents, batch);
+        totalLlmMatches += matches.length;
+
+        for (const match of matches) {
+          // Validate: date within ±48h; also set commence from the odds line
+          const oddsLine = oddsLines.get(match.oddsApiEventId);
+          if (oddsLine) {
+            const timeDiff = Math.abs(
+              oddsLine.commence -
+                new Date(
+                  polymarkets.find((p) => p.slug === match.slug)?.endDate ?? 0,
+                ).getTime(),
+            );
+            if (timeDiff > 48 * 60 * 60 * 1000) {
+              log.warn(
+                `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (${(timeDiff / 3600000).toFixed(0)}h)`,
+              );
+              continue;
+            }
+            match.commence = oddsLine.commence;
+          }
+
+          // Set active from the full Polymarket market record
+          const pmFull = polymarkets.find((p) => p.slug === match.slug);
+          if (pmFull) {
+            match.active = pmFull.active;
+          }
+
+          this.table.set(match.slug, match);
+          newCount++;
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.error(`LLM batch ${i + 1}/${batches.length} failed: ${message}`);
+        // Continue with remaining batches — don't abort the whole cycle
+      }
+    }
+
+    this.saveToDisk();
+    this.rebuildTokenIndex();
+    log.info(
+      `LLM returned ${totalLlmMatches} match(es), ${newCount} validated`,
+    );
+
+    return { newMatches: newCount, total: this.table.size };
   }
 
   /** Remove expired matches (events that have started AND are no longer active). */
@@ -245,17 +250,8 @@ export class MarketMatcher {
       home: string;
       away: string;
       time: string;
-      marketTypes: string[];
     }>,
-    polymarkets: Array<{
-      slug: string;
-      question: string;
-      outcomes: string[];
-      tokenIds: string[];
-      groupItemTitle: string | null;
-      endDate: string;
-      active: boolean;
-    }>,
+    polymarkets: PolymarketMarket[],
   ): Promise<MatchEntry[]> {
     if (!config.anthropicApiKey) {
       log.warn("No ANTHROPIC_API_KEY — skipping LLM matching");
@@ -272,7 +268,15 @@ Rules:
 - Set confidence=high only when team names clearly match and dates align
 - If no match exists, omit that market from the matches array entirely`;
 
-    const userPrompt = `Sportsbook events:\n${JSON.stringify(oddsEvents, null, 2)}\n\nPolymarket markets:\n${JSON.stringify(polymarkets, null, 2)}`;
+    // Slim projection: only fields the LLM needs for matching
+    const polySlim = polymarkets.map((pm) => ({
+      slug: pm.slug,
+      question: pm.question,
+      groupItemTitle: pm.groupItemTitle ?? null,
+      endDate: pm.endDate,
+    }));
+
+    const userPrompt = `Sportsbook events:\n${JSON.stringify(oddsEvents)}\n\nPolymarket markets:\n${JSON.stringify(polySlim)}`;
 
     const reqBody = JSON.stringify({
       model: config.matcherModel,
@@ -360,8 +364,8 @@ Rules:
       tool_choice: { type: "tool", name: "submit_matches" },
     });
 
-    log.info(
-      `LLM request: ${oddsEvents.length} events, ${polymarkets.length} markets, payload ${(reqBody.length / 1024).toFixed(1)}KB`,
+    console.log(
+      `[matcher] LLM payload: ${oddsEvents.length} odds events, ${polymarkets.length} markets, ${(reqBody.length / 1024).toFixed(1)}KB (${reqBody.length} bytes)`,
     );
 
     const controller = new AbortController();
@@ -477,68 +481,88 @@ Rules:
   }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
 // ── Gamma API Helper ──────────────────────────────────────────────
 
-/** Fetch active sports markets from the Gamma API (paginated). */
+/** Fetch active sports markets from the Gamma API (paginated, per tag). */
 export async function fetchPolymarketSportsMarkets(): Promise<
   PolymarketMarket[]
 > {
   const PAGE_SIZE = 200;
   const all: PolymarketMarket[] = [];
-  let offset = 0;
+  const seenSlugs = new Set<string>();
 
-  while (true) {
-    const url = `${config.gammaApiUrl}/markets?tag=sports&active=true&closed=false&limit=${PAGE_SIZE}&offset=${offset}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      log.error(`Gamma API error: ${res.status}`);
-      break;
+  for (const tag of config.polymarketSportsTags) {
+    let offset = 0;
+    let tagCount = 0;
+
+    while (true) {
+      const url = `${config.gammaApiUrl}/markets?tag=${encodeURIComponent(tag)}&active=true&closed=false&limit=${PAGE_SIZE}&offset=${offset}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        log.error(`Gamma API error for tag "${tag}": ${res.status}`);
+        break;
+      }
+
+      interface GammaMarketResponse {
+        slug: string;
+        question: string;
+        outcomes: string | string[];
+        outcomePrices: string | string[];
+        clobTokenIds: string | string[];
+        endDate: string;
+        active: boolean;
+        closed: boolean;
+        groupItemTitle?: string;
+        conditionId: string;
+      }
+
+      const raw: GammaMarketResponse[] = await res.json();
+      if (raw.length === 0) break;
+
+      for (const m of raw) {
+        if (seenSlugs.has(m.slug)) continue;
+        seenSlugs.add(m.slug);
+        all.push({
+          slug: m.slug,
+          question: m.question,
+          outcomes:
+            typeof m.outcomes === "string"
+              ? JSON.parse(m.outcomes)
+              : (m.outcomes ?? ["Yes", "No"]),
+          outcomePrices:
+            typeof m.outcomePrices === "string"
+              ? JSON.parse(m.outcomePrices)
+              : (m.outcomePrices ?? ["0.5", "0.5"]),
+          tokenIds:
+            typeof m.clobTokenIds === "string"
+              ? JSON.parse(m.clobTokenIds)
+              : Array.isArray(m.clobTokenIds)
+                ? m.clobTokenIds
+                : [],
+          endDate: m.endDate,
+          active: m.active,
+          closed: m.closed,
+          groupItemTitle: m.groupItemTitle,
+          conditionId: m.conditionId,
+        });
+        tagCount++;
+      }
+
+      if (raw.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
     }
 
-    interface GammaMarketResponse {
-      slug: string;
-      question: string;
-      outcomes: string | string[];
-      outcomePrices: string | string[];
-      clobTokenIds: string | string[];
-      endDate: string;
-      active: boolean;
-      closed: boolean;
-      groupItemTitle?: string;
-      conditionId: string;
-    }
-
-    const raw: GammaMarketResponse[] = await res.json();
-    if (raw.length === 0) break;
-
-    for (const m of raw) {
-      all.push({
-        slug: m.slug,
-        question: m.question,
-        outcomes:
-          typeof m.outcomes === "string"
-            ? JSON.parse(m.outcomes)
-            : (m.outcomes ?? ["Yes", "No"]),
-        outcomePrices:
-          typeof m.outcomePrices === "string"
-            ? JSON.parse(m.outcomePrices)
-            : (m.outcomePrices ?? ["0.5", "0.5"]),
-        tokenIds:
-          typeof m.clobTokenIds === "string"
-            ? JSON.parse(m.clobTokenIds)
-            : Array.isArray(m.clobTokenIds)
-              ? m.clobTokenIds
-              : [],
-        endDate: m.endDate,
-        active: m.active,
-        closed: m.closed,
-        groupItemTitle: m.groupItemTitle,
-        conditionId: m.conditionId,
-      });
-    }
-
-    if (raw.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
+    log.info(`Gamma: ${tagCount} market(s) for tag "${tag}"`);
   }
 
   return all;
