@@ -26,6 +26,7 @@ interface OddsStreamEvents {
 
 const PING_INTERVAL_MS = 10_000;
 const ODDS_BATCH_SIZE = 10;
+const HYDRATE_CONCURRENCY = 5;
 
 export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private cache = new Map<string, SharpLine>();
@@ -84,9 +85,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
 
     for (const sport of config.oddsApiSports) {
       await this.hydrateSportEvents(sport, "pending");
-      await sleep(1000);
       await this.hydrateSportEvents(sport, "live");
-      await sleep(1000);
     }
 
     this._lastHydrateAt = Date.now();
@@ -120,38 +119,24 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
         return;
       }
 
-      // Step 2: fetch odds in batches of 10
+      // Step 2: fetch odds in concurrent batches of 10
       const ids = events.map((e) => String(e.id));
       let hydrated = 0;
 
+      const batches: string[][] = [];
       for (let i = 0; i < ids.length; i += ODDS_BATCH_SIZE) {
-        const batch = ids.slice(i, i + ODDS_BATCH_SIZE);
-        const oddsUrl =
-          `${config.oddsApiRestUrl}/v3/odds/multi` +
-          `?apiKey=${config.oddsApiKey}` +
-          `&eventIds=${batch.join(",")}` +
-          `&bookmakers=${config.bookmakerId}`;
+        batches.push(ids.slice(i, i + ODDS_BATCH_SIZE));
+      }
 
-        const oddsRes = await fetch(oddsUrl, { signal: AbortSignal.timeout(15_000) });
-        if (!oddsRes.ok) {
-          const body = await oddsRes.text().catch(() => "");
-          log.error(
-            `Odds batch fetch failed (${sport} ${status}, batch ${Math.floor(i / ODDS_BATCH_SIZE) + 1}): HTTP ${oddsRes.status} ${oddsRes.statusText} — ${body}`,
-          );
-          continue;
-        }
-
-        const oddsData: OddsApiIoOddsResponse[] = await oddsRes.json();
-        for (const item of oddsData) {
-          const line = this.parseOddsResponse(item);
-          if (line) {
+      for (let i = 0; i < batches.length; i += HYDRATE_CONCURRENCY) {
+        const chunk = batches.slice(i, i + HYDRATE_CONCURRENCY);
+        const results = await Promise.all(chunk.map((batch) => this.fetchOddsBatch(batch)));
+        for (const lines of results) {
+          for (const line of lines) {
             this.cache.set(line.eventId, line);
             hydrated++;
           }
         }
-
-        // Rate-limit between batches
-        if (i + ODDS_BATCH_SIZE < ids.length) await sleep(1000);
       }
 
       log.info(`Hydrated ${hydrated}/${events.length} ${status} events for ${sport}`);
@@ -359,6 +344,35 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   }
 
   /**
+   * Fetch odds for a batch of event IDs. Returns parsed SharpLines.
+   */
+  private async fetchOddsBatch(batch: string[]): Promise<SharpLine[]> {
+    const url =
+      `${config.oddsApiRestUrl}/v3/odds/multi` +
+      `?apiKey=${config.oddsApiKey}` +
+      `&eventIds=${batch.join(",")}` +
+      `&bookmakers=${config.bookmakerId}`;
+
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        log.error(`Odds batch fetch failed: HTTP ${res.status} ${res.statusText} — ${body}`);
+        return [];
+      }
+      const data: OddsApiIoOddsResponse[] = await res.json();
+      return data.flatMap((item) => {
+        const line = this.parseOddsResponse(item);
+        return line ? [line] : [];
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`fetchOddsBatch error: ${message}`);
+      return [];
+    }
+  }
+
+  /**
    * Fetch full event + odds from REST for a single event ID.
    * Used when a WS "created" message fires for an event not in cache.
    */
@@ -445,8 +459,4 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
 function decimalToProb(decimal: number): number {
   if (decimal <= 0) return 0;
   return 1 / decimal;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
