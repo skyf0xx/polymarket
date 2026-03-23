@@ -21,6 +21,7 @@ import {
 import { PositionTracker } from "./position-tracker.js";
 import { executeSignal } from "./executor.js";
 import { getUsdcBalance } from "./wallet.js";
+import { appendBuyEntry } from "./entry-logger.js";
 import type {
   SharpLine,
   PriceEntry,
@@ -249,6 +250,19 @@ export class Coordinator {
       };
 
       markSignaled(tokenId);
+
+      // Persist to entries.jsonl for manual review
+      appendBuyEntry(
+        tokenSide,
+        match,
+        line,
+        priceEntry.bestAsk,
+        sharpProb,
+        result.netEdge,
+        result.kellyFraction,
+        size,
+      );
+
       this.dispatchSignal(signal);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
