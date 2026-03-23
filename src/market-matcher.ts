@@ -12,6 +12,7 @@ import {
 import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
+import { TeamKnowledge, resolveIndices } from "./team-knowledge.js";
 import type {
   MatchEntry,
   MarketType,
@@ -26,6 +27,7 @@ const MATCH_TABLE_FILE = join(config.dataDir, "match-table.json");
 export class MarketMatcher {
   private table = new Map<string, MatchEntry>();
   private tokenIndex = new Map<string, MatchEntry>(); // tokenId → MatchEntry
+  private knowledge = new TeamKnowledge();
 
   constructor() {
     this.loadFromDisk();
@@ -93,11 +95,7 @@ export class MarketMatcher {
       return { newMatches: 0, total: this.table.size };
     }
 
-    log.info(
-      `${unmatched.length} unmatched market(s) — running LLM matcher...`,
-    );
-
-    // Build slim Odds API event list for the LLM (no marketTypes)
+    // Build slim Odds API event list (shared by deterministic + LLM paths)
     const oddsEvents = [...oddsLines.values()].map((line) => ({
       id: line.eventId,
       sport: line.sportKey,
@@ -107,14 +105,48 @@ export class MarketMatcher {
     }));
 
     if (oddsEvents.length === 0) {
-      log.warn("No odds events available — skipping LLM matcher");
+      log.warn("No odds events available — skipping matcher");
       return { newMatches: 0, total: this.table.size };
     }
 
-    // ── Sequential batching: 25 markets per round ──
+    // ── Tier 1.5: Deterministic match from team knowledge ──────────
+    const now = Date.now();
+    const needsLlm: PolymarketMarket[] = [];
+    let deterministicCount = 0;
+
+    for (const pm of unmatched) {
+      const det = this.knowledge.tryMatch(pm, oddsEvents, now);
+      if (det) {
+        const oddsLine = oddsLines.get(det.oddsApiEventId);
+        const timeDiff = Math.abs(
+          (oddsLine?.commence ?? 0) - new Date(pm.endDate ?? 0).getTime(),
+        );
+        if (oddsLine && timeDiff <= 48 * 60 * 60 * 1000) {
+          const entry: MatchEntry = { ...det, commence: oddsLine.commence, active: pm.active };
+          this.table.set(pm.slug, entry);
+          deterministicCount++;
+          continue;
+        }
+      }
+      needsLlm.push(pm);
+    }
+
+    if (deterministicCount > 0) {
+      log.info(`Deterministic: ${deterministicCount} market(s) matched from team knowledge`);
+      this.saveToDisk();
+      this.rebuildTokenIndex();
+    }
+
+    if (needsLlm.length === 0) {
+      return { newMatches: deterministicCount, total: this.table.size };
+    }
+
+    // ── Tier 2: LLM for remaining unmatched ────────────────────────
+    log.info(`${needsLlm.length} market(s) need LLM matching...`);
+
     const BATCH_SIZE = 25;
-    const batches = chunk(unmatched, BATCH_SIZE);
-    let newCount = 0;
+    const batches = chunk(needsLlm, BATCH_SIZE);
+    let newCount = deterministicCount;
     let totalLlmMatches = 0;
 
     for (let i = 0; i < batches.length; i++) {
@@ -146,10 +178,11 @@ export class MarketMatcher {
             match.commence = oddsLine.commence;
           }
 
-          // Set active from the full Polymarket market record
           const pmFull = polymarkets.find((p) => p.slug === match.slug);
           if (pmFull) {
             match.active = pmFull.active;
+            // Teach the knowledge base from this successful LLM match
+            this.knowledge.learn(match, pmFull);
           }
 
           this.table.set(match.slug, match);
@@ -158,15 +191,12 @@ export class MarketMatcher {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         log.error(`LLM batch ${i + 1}/${batches.length} failed: ${message}`);
-        // Continue with remaining batches — don't abort the whole cycle
       }
     }
 
     this.saveToDisk();
     this.rebuildTokenIndex();
-    log.info(
-      `LLM returned ${totalLlmMatches} match(es), ${newCount} validated`,
-    );
+    log.info(`LLM returned ${totalLlmMatches} match(es), ${newCount} total validated`);
 
     return { newMatches: newCount, total: this.table.size };
   }
@@ -420,41 +450,7 @@ Rules:
         return [];
       }
       const outcomes = pm.outcomes ?? [];
-      let yesIdx = outcomes.findIndex(
-        (o) => o.toLowerCase() === r.outcomeMap.Yes.toLowerCase(),
-      );
-      let noIdx = outcomes.findIndex(
-        (o) => o.toLowerCase() === r.outcomeMap.No.toLowerCase(),
-      );
-
-      // Positional fallback for h2h/spreads where outcomes are ["Yes","No"] but
-      // outcomeMap contains team names (used by coordinator for sharp prob lookup)
-      if ((yesIdx === -1 || noIdx === -1) && (r.marketType === "h2h" || r.marketType === "spreads")) {
-        const yesPos = outcomes.findIndex((o) => o.toLowerCase() === "yes");
-        const noPos = outcomes.findIndex((o) => o.toLowerCase() === "no");
-        if (yesPos !== -1 && noPos !== -1) {
-          yesIdx = yesPos;
-          noIdx = noPos;
-        }
-      }
-
-      // Nickname fallback: outcomes are short team names (e.g. "Thunder", "76ers")
-      // while outcomeMap has full names (e.g. "Oklahoma City Thunder"). Match if the
-      // full name contains the short outcome string.
-      if ((yesIdx === -1 || noIdx === -1) && (r.marketType === "h2h" || r.marketType === "spreads")) {
-        if (yesIdx === -1) {
-          yesIdx = outcomes.findIndex((o) =>
-            r.outcomeMap.Yes.toLowerCase().includes(o.toLowerCase()) ||
-            o.toLowerCase().includes(r.outcomeMap.Yes.toLowerCase()),
-          );
-        }
-        if (noIdx === -1) {
-          noIdx = outcomes.findIndex((o) =>
-            r.outcomeMap.No.toLowerCase().includes(o.toLowerCase()) ||
-            o.toLowerCase().includes(r.outcomeMap.No.toLowerCase()),
-          );
-        }
-      }
+      const { yesIdx, noIdx } = resolveIndices(outcomes, r.outcomeMap);
 
       if (yesIdx === -1 || noIdx === -1) {
         log.warn(
