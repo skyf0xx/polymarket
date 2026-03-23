@@ -34,6 +34,10 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private reconnectAttempt = 0;
   private maxReconnectDelay = 60_000;
   private destroyed = false;
+  private _lastHydrateAt = 0;
+  private connectedAt = 0;
+  private static readonly HYDRATE_COOLDOWN_MS = 5 * 60_000; // 5 min between hydrations
+  private static readonly STABLE_CONN_MS = 30_000; // 30s before resetting backoff
 
   // ── Public API ──────────────────────────────────────────────────
 
@@ -47,6 +51,15 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
 
   get size(): number {
     return this.cache.size;
+  }
+
+  get lastHydrateAt(): number {
+    return this._lastHydrateAt;
+  }
+
+  /** Force a full REST rehydration (used by maintenance cycle). */
+  async rehydrate(): Promise<void> {
+    await this.hydrateFromRest();
   }
 
   async start(): Promise<void> {
@@ -70,12 +83,13 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     log.info(`Hydrating odds for ${config.oddsApiSports.length} sport(s)...`);
 
     for (const sport of config.oddsApiSports) {
-      // Hydrate pending (upcoming) events
       await this.hydrateSportEvents(sport, "pending");
-      // Hydrate live (in-play) events
+      await sleep(1000);
       await this.hydrateSportEvents(sport, "live");
+      await sleep(1000);
     }
 
+    this._lastHydrateAt = Date.now();
     log.info(`Odds cache ready: ${this.cache.size} events`);
   }
 
@@ -93,9 +107,10 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
         `&sport=${sport}` +
         (status === "pending" ? `&status=pending` : "");
 
-      const eventsRes = await fetch(eventsUrl);
+      const eventsRes = await fetch(eventsUrl, { signal: AbortSignal.timeout(15_000) });
       if (!eventsRes.ok) {
-        log.error(`Events fetch failed for ${sport} (${status}): ${eventsRes.status}`);
+        const body = await eventsRes.text().catch(() => "");
+      log.error(`Events fetch failed for ${sport} (${status}): HTTP ${eventsRes.status} ${eventsRes.statusText} — ${body}`);
         return;
       }
 
@@ -117,10 +132,11 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
           `&eventIds=${batch.join(",")}` +
           `&bookmakers=${config.bookmakerId}`;
 
-        const oddsRes = await fetch(oddsUrl);
+        const oddsRes = await fetch(oddsUrl, { signal: AbortSignal.timeout(15_000) });
         if (!oddsRes.ok) {
+          const body = await oddsRes.text().catch(() => "");
           log.error(
-            `Odds batch fetch failed (${sport} ${status}, batch ${Math.floor(i / ODDS_BATCH_SIZE) + 1}): ${oddsRes.status}`,
+            `Odds batch fetch failed (${sport} ${status}, batch ${Math.floor(i / ODDS_BATCH_SIZE) + 1}): HTTP ${oddsRes.status} ${oddsRes.statusText} — ${body}`,
           );
           continue;
         }
@@ -133,12 +149,16 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
             hydrated++;
           }
         }
+
+        // Rate-limit between batches
+        if (i + ODDS_BATCH_SIZE < ids.length) await sleep(1000);
       }
 
       log.info(`Hydrated ${hydrated}/${events.length} ${status} events for ${sport}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      log.error(`REST hydration error for ${sport} (${status}): ${message}`);
+      const cause = err instanceof Error && err.cause ? ` | cause: ${err.cause}` : "";
+      log.error(`REST hydration error for ${sport} (${status}): ${message}${cause}`);
     }
   }
 
@@ -162,7 +182,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     this.ws = new WebSocket(url);
 
     this.ws.on("open", () => {
-      this.reconnectAttempt = 0;
+      this.connectedAt = Date.now();
       log.info("Odds API WS connected");
       this.emit("connected");
       this.startHeartbeat();
@@ -268,6 +288,14 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private scheduleReconnect(): void {
     if (this.destroyed) return;
 
+    // Only reset backoff if the connection was stable for 30s+
+    if (
+      this.connectedAt > 0 &&
+      Date.now() - this.connectedAt >= OddsStream.STABLE_CONN_MS
+    ) {
+      this.reconnectAttempt = 0;
+    }
+
     const delay = Math.min(
       1000 * Math.pow(2, this.reconnectAttempt),
       this.maxReconnectDelay,
@@ -279,11 +307,19 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     );
 
     setTimeout(async () => {
-      try {
-        await this.hydrateFromRest();
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.error(`REST hydration failed on reconnect: ${message}`);
+      // Skip re-hydration if we hydrated recently — cache is still warm
+      const sinceLast = Date.now() - this._lastHydrateAt;
+      if (sinceLast >= OddsStream.HYDRATE_COOLDOWN_MS) {
+        try {
+          await this.hydrateFromRest();
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.error(`REST hydration failed on reconnect: ${message}`);
+        }
+      } else {
+        log.info(
+          `Skipping re-hydration (last hydrated ${Math.round(sinceLast / 1000)}s ago, cache has ${this.cache.size} events)`,
+        );
       }
       this.connectWs();
     }, delay);
@@ -334,9 +370,10 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
         `&eventId=${eventId}` +
         `&bookmakers=${config.bookmakerId}`;
 
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
       if (!res.ok) {
-        log.error(`fetchEventOdds failed for ${eventId}: ${res.status}`);
+        const body = await res.text().catch(() => "");
+        log.error(`fetchEventOdds failed for ${eventId}: HTTP ${res.status} ${res.statusText} — ${body}`);
         return null;
       }
 
@@ -344,7 +381,8 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       return this.parseOddsResponse(data);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      log.error(`fetchEventOdds error for ${eventId}: ${message}`);
+      const cause = err instanceof Error && err.cause ? ` | cause: ${err.cause}` : "";
+      log.error(`fetchEventOdds error for ${eventId}: ${message}${cause}`);
       return null;
     }
   }
@@ -407,4 +445,8 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
 function decimalToProb(decimal: number): number {
   if (decimal <= 0) return 0;
   return 1 / decimal;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
