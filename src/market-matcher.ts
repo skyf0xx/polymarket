@@ -261,10 +261,9 @@ export class MarketMatcher {
 
 Rules:
 - Match by team names, date proximity, and sport
-- Each Polymarket market has an "outcomes" array — use the EXACT strings from that array in outcomeMap.Yes and outcomeMap.No
-- For "Will X beat Y?" markets where outcomes=["Yes","No"]: outcomeMap={Yes:"Yes",No:"No"}
-- For moneyline markets where outcomes are team names: outcomeMap={Yes:<winning team>,No:<losing team>}
-- For totals where outcomes=["Over","Under"]: outcomeMap={Yes:"Over",No:"Under"}
+- Each Polymarket market has an "outcomes" array
+- For totals: use exact outcome strings — outcomeMap={Yes:"Over",No:"Under"}
+- For h2h/spreads: always use the SPORTSBOOK team name in outcomeMap (e.g. outcomeMap={Yes:"Los Angeles Lakers",No:"Boston Celtics"}), even if Polymarket outcomes are ["Yes","No"] — the team name tells the system which side "Yes" represents
 - Set confidence=high only when team names clearly match and dates align
 - If no match exists, omit that market from the matches array entirely`;
 
@@ -421,12 +420,23 @@ Rules:
         return [];
       }
       const outcomes = pm.outcomes ?? [];
-      const yesIdx = outcomes.findIndex(
+      let yesIdx = outcomes.findIndex(
         (o) => o.toLowerCase() === r.outcomeMap.Yes.toLowerCase(),
       );
-      const noIdx = outcomes.findIndex(
+      let noIdx = outcomes.findIndex(
         (o) => o.toLowerCase() === r.outcomeMap.No.toLowerCase(),
       );
+
+      // Positional fallback for h2h/spreads where outcomes are ["Yes","No"] but
+      // outcomeMap contains team names (used by coordinator for sharp prob lookup)
+      if ((yesIdx === -1 || noIdx === -1) && (r.marketType === "h2h" || r.marketType === "spreads")) {
+        const yesPos = outcomes.findIndex((o) => o.toLowerCase() === "yes");
+        const noPos = outcomes.findIndex((o) => o.toLowerCase() === "no");
+        if (yesPos !== -1 && noPos !== -1) {
+          yesIdx = yesPos;
+          noIdx = noPos;
+        }
+      }
 
       if (yesIdx === -1 || noIdx === -1) {
         log.warn(
