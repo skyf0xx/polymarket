@@ -261,9 +261,10 @@ export class MarketMatcher {
 
 Rules:
 - Match by team names, date proximity, and sport
-- Map "Yes"/"No" outcomes to the correct team/side
-- For "Will X beat Y?" questions, "Yes" maps to X
-- For totals, "Yes" typically maps to "Over"
+- Each Polymarket market has an "outcomes" array — use the EXACT strings from that array in outcomeMap.Yes and outcomeMap.No
+- For "Will X beat Y?" markets where outcomes=["Yes","No"]: outcomeMap={Yes:"Yes",No:"No"}
+- For moneyline markets where outcomes are team names: outcomeMap={Yes:<winning team>,No:<losing team>}
+- For totals where outcomes=["Over","Under"]: outcomeMap={Yes:"Over",No:"Under"}
 - Set confidence=high only when team names clearly match and dates align
 - If no match exists, omit that market from the matches array entirely`;
 
@@ -272,6 +273,7 @@ Rules:
       slug: pm.slug,
       question: pm.question,
       groupItemTitle: pm.groupItemTitle ?? null,
+      outcomes: pm.outcomes ?? ["Yes", "No"],
       endDate: pm.endDate,
     }));
 
