@@ -438,6 +438,24 @@ Rules:
         }
       }
 
+      // Nickname fallback: outcomes are short team names (e.g. "Thunder", "76ers")
+      // while outcomeMap has full names (e.g. "Oklahoma City Thunder"). Match if the
+      // full name contains the short outcome string.
+      if ((yesIdx === -1 || noIdx === -1) && (r.marketType === "h2h" || r.marketType === "spreads")) {
+        if (yesIdx === -1) {
+          yesIdx = outcomes.findIndex((o) =>
+            r.outcomeMap.Yes.toLowerCase().includes(o.toLowerCase()) ||
+            o.toLowerCase().includes(r.outcomeMap.Yes.toLowerCase()),
+          );
+        }
+        if (noIdx === -1) {
+          noIdx = outcomes.findIndex((o) =>
+            r.outcomeMap.No.toLowerCase().includes(o.toLowerCase()) ||
+            o.toLowerCase().includes(r.outcomeMap.No.toLowerCase()),
+          );
+        }
+      }
+
       if (yesIdx === -1 || noIdx === -1) {
         log.warn(
           `LLM match "${r.slug}" could not map outcomes (got ${JSON.stringify(outcomes)}, outcomeMap=${JSON.stringify(r.outcomeMap)}), skipping`,
