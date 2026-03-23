@@ -418,12 +418,17 @@ Rules:
         log.warn(`LLM returned unknown slug "${r.slug}", skipping`);
         return [];
       }
-      const yesIdx = pm.outcomes?.indexOf("Yes") ?? -1;
-      const noIdx = pm.outcomes?.indexOf("No") ?? -1;
+      const outcomes = pm.outcomes ?? [];
+      const yesIdx = outcomes.findIndex(
+        (o) => o.toLowerCase() === r.outcomeMap.Yes.toLowerCase(),
+      );
+      const noIdx = outcomes.findIndex(
+        (o) => o.toLowerCase() === r.outcomeMap.No.toLowerCase(),
+      );
 
       if (yesIdx === -1 || noIdx === -1) {
         log.warn(
-          `LLM match "${r.slug}" missing Yes/No outcomes (got ${JSON.stringify(pm.outcomes)}), skipping`,
+          `LLM match "${r.slug}" could not map outcomes (got ${JSON.stringify(outcomes)}, outcomeMap=${JSON.stringify(r.outcomeMap)}), skipping`,
         );
         return [];
       }
