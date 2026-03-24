@@ -19,7 +19,14 @@
       "pur": "Purdue Boilermakers",
       "ark": "Arkansas Razorbacks",
       "arz": "Arizona Wildcats",
-      "ill": "Illinois Fighting Illini"
+      "ill": "Illinois Fighting Illini",
+      "mia": "Orlando Magic"
+    },
+    "football": {
+      "ein": "1. FC Cologne",
+      "koe": "Eintracht Frankfurt",
+      "aja": "FC Twente Enschede",
+      "twe": "Ajax Amsterdam"
     }
   },
   "nicknames": {
@@ -35,7 +42,8 @@
       "Thunder": "Oklahoma City Thunder",
       "Celtics": "Boston Celtics",
       "Rockets": "Houston Rockets",
-      "Timberwolves": "Minnesota Timberwolves"
+      "Timberwolves": "Minnesota Timberwolves",
+      "Heat": "Miami Heat"
     },
     "football": {
       "No": "No Draw"
