@@ -53,8 +53,8 @@ function log(
     console.log(formatConsole(entry));
   }
 
-  // Persist to JSONL file if requested (edges, trades, exits)
-  if (persist) {
+  // Persist to JSONL file only in dry-run mode
+  if (persist && config.dryRun) {
     writeToFile(entry);
   }
 }
