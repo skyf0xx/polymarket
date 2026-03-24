@@ -8,7 +8,18 @@
       "den": "Denver Nuggets",
       "phx": "Phoenix Suns",
       "orl": "Orlando Magic",
-      "cle": "Cleveland Cavaliers"
+      "cle": "Cleveland Cavaliers",
+      "okc": "Oklahoma City Thunder",
+      "bos": "Boston Celtics",
+      "hou": "Houston Cougars",
+      "min": "Minnesota Timberwolves",
+      "nebr": "Iowa Hawkeyes",
+      "iowa": "Nebraska Cornhuskers",
+      "tx": "Texas Longhorns",
+      "pur": "Purdue Boilermakers",
+      "ark": "Arkansas Razorbacks",
+      "arz": "Arizona Wildcats",
+      "ill": "Illinois Fighting Illini"
     }
   },
   "nicknames": {
@@ -25,6 +36,9 @@
       "Celtics": "Boston Celtics",
       "Rockets": "Houston Rockets",
       "Timberwolves": "Minnesota Timberwolves"
+    },
+    "football": {
+      "No": "No Draw"
     }
   }
 }
