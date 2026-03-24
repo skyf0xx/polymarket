@@ -10,21 +10,17 @@ const log = createLogger("edge");
 
 // ── Fee Schedule ──────────────────────────────────────────────────
 // Some Polymarket markets charge taker fees. The fee formula is:
-//   fee = rate × price × (1 - price)
-// where rate ≈ 1.75% for certain markets (NCAAB, Serie A, etc.)
+// fee = C × p × feeRate × (p × (1 - p))^exponent
+// Where C = number of shares traded and p = price of the shares.
+// Where rate 0.03 for sports market, and exponent is 1
+// Note these are only for takes but to simplify we assume we are takers.
+// There may be a better way in the future
 
-const FEE_SPORT_KEYS = new Set([
-  "basketball_ncaab",
-  "soccer_italy_serie_a",
-]);
+const FEE_RATE = 0.03;
 
-const FEE_RATE = 0.0175;
-
-function estimateFee(price: number, sportKey: string): number {
-  if (FEE_SPORT_KEYS.has(sportKey)) {
-    return FEE_RATE * price * (1 - price);
-  }
-  return 0;
+// Per-share fee: feeRate × p × (p × (1 - p))^1 = feeRate × p² × (1 - p)
+function estimateFee(price: number, _sportKey?: string): number {
+  return FEE_RATE * price * price * (1 - price);
 }
 
 // ── Cooldown State ────────────────────────────────────────────────
@@ -48,11 +44,11 @@ export function clearCooldown(tokenId: string): void {
 // ── Edge Computation ──────────────────────────────────────────────
 
 export interface ComputeEdgeInput {
-  sharpProb: number;        // implied prob from Odds API
-  polyPrice: number;        // midpoint (for logging)
-  takerPrice: number;       // best ask when buying, best bid when selling
-  sportKey: string;         // for fee lookup
-  bankroll: number;         // total USDC bankroll
+  sharpProb: number; // implied prob from Odds API
+  polyPrice: number; // midpoint (for logging)
+  takerPrice: number; // best ask when buying, best bid when selling
+  sportKey: string; // for fee lookup
+  bankroll: number; // total USDC bankroll
   existingPosition: number; // USDC already in this market
 }
 
@@ -91,8 +87,7 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
   // 5. Kelly fraction: edge / (1 - price)
   //    This is the Kelly formula for a binary bet where you buy at `price`
   //    and win $1 or lose your stake.
-  const kellyFraction =
-    takerPrice < 1 ? netEdge / (1 - takerPrice) : 0;
+  const kellyFraction = takerPrice < 1 ? netEdge / (1 - takerPrice) : 0;
 
   // 6. Apply Kelly multiplier (quarter Kelly by default)
   const adjustedKelly = kellyFraction * config.kellyFraction;
@@ -114,10 +109,7 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
       kellyFraction,
       suggestedSize: 0,
       tradeable: false,
-      skipReason:
-        remainingRoom < 5
-          ? "position_cap_reached"
-          : "bet_too_small",
+      skipReason: remainingRoom < 5 ? "position_cap_reached" : "bet_too_small",
     };
   }
 
@@ -135,16 +127,16 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
 
 export interface ExitCheckInput {
   position: Position;
-  currentPrice: number;  // midpoint (for logging)
-  bestBid: number;       // taker sell price — what you'd actually receive
-  sharpProb: number;     // current sharp line implied prob
+  currentPrice: number; // midpoint (for logging)
+  bestBid: number; // taker sell price — what you'd actually receive
+  sharpProb: number; // current sharp line implied prob
   sportKey: string;
 }
 
 export interface ExitResult {
   shouldExit: boolean;
   reason?: string;
-  edge: number;         // current edge (negative = overpriced)
+  edge: number; // current edge (negative = overpriced)
   profitPerShare: number;
 }
 
