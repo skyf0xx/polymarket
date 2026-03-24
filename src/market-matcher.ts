@@ -122,7 +122,11 @@ export class MarketMatcher {
           (oddsLine?.commence ?? 0) - new Date(pm.endDate ?? 0).getTime(),
         );
         if (oddsLine && timeDiff <= 48 * 60 * 60 * 1000) {
-          const entry: MatchEntry = { ...det, commence: oddsLine.commence, active: pm.active };
+          const entry: MatchEntry = {
+            ...det,
+            commence: oddsLine.commence,
+            active: pm.active,
+          };
           this.table.set(pm.slug, entry);
           deterministicCount++;
           continue;
@@ -132,7 +136,9 @@ export class MarketMatcher {
     }
 
     if (deterministicCount > 0) {
-      log.info(`Deterministic: ${deterministicCount} market(s) matched from team knowledge`);
+      log.info(
+        `Deterministic: ${deterministicCount} market(s) matched from team knowledge`,
+      );
       this.saveToDisk();
       this.rebuildTokenIndex();
     }
@@ -196,7 +202,9 @@ export class MarketMatcher {
 
     this.saveToDisk();
     this.rebuildTokenIndex();
-    log.info(`LLM returned ${totalLlmMatches} match(es), ${newCount} total validated`);
+    log.info(
+      `LLM returned ${totalLlmMatches} match(es), ${newCount} total validated`,
+    );
 
     return { newMatches: newCount, total: this.table.size };
   }

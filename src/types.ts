@@ -29,8 +29,8 @@ export interface SharpLine {
   commence: number; // unix ms
   markets: {
     h2h?: H2HMarket;
-    spreads?: SpreadMarket;
-    totals?: TotalsMarket;
+    spreads?: SpreadMarket[];  // all available lines, indexed by .point
+    totals?: TotalsMarket[];   // all available lines, indexed by .point
   };
   updatedAt: number;
 }
