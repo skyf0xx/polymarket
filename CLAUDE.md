@@ -27,7 +27,7 @@ Fully event-driven — no polling loop. Two persistent WebSocket connections fee
 
 ```
 gross_edge = sharp_prob - polymarket_price
-fee = 0.0175 × price × (1 - price)  // only NCAAB + Serie A
+fee = 0.03 × price² × (1 - price)    // all sports markets
 net_edge = gross_edge - fee
 kelly_fraction = net_edge / (1 - price)
 bet_size = bankroll × kelly_fraction × KELLY_FRACTION  // default 0.25 (quarter Kelly)
