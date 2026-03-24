@@ -74,6 +74,7 @@ export const config = {
   // Edge & Sizing
   minEdge: envNum("MIN_EDGE", 0.02),
   kellyFraction: envNum("KELLY_FRACTION", 0.25),
+  maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
   maxPositionPct: envNum("MAX_POSITION_PCT", 0.10),
 
   // Timing
