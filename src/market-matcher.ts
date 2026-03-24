@@ -150,12 +150,18 @@ export class MarketMatcher {
     // ── Tier 2: LLM for remaining unmatched ────────────────────────
     log.info(`${needsLlm.length} market(s) need LLM matching...`);
 
-    const BATCH_SIZE = 25;
+    const BATCH_SIZE = 10;
+    const LLM_INTER_BATCH_DELAY_MS = 5_000; // 5s between calls to avoid rate limits
     const batches = chunk(needsLlm, BATCH_SIZE);
     let newCount = deterministicCount;
     let totalLlmMatches = 0;
 
     for (let i = 0; i < batches.length; i++) {
+      if (i > 0) {
+        log.info(`Waiting ${LLM_INTER_BATCH_DELAY_MS / 1000}s before next LLM batch...`);
+        await new Promise((r) => setTimeout(r, LLM_INTER_BATCH_DELAY_MS));
+      }
+
       const batch = batches[i];
       log.info(
         `LLM batch ${i + 1}/${batches.length}: ${batch.length} market(s), ${oddsEvents.length} odds events`,
