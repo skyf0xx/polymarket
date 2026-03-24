@@ -442,8 +442,10 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
             (o) =>
               o.home != null &&
               o.home !== "N/A" &&
+              isRealOdds(o.home) &&
               o.away != null &&
-              o.away !== "N/A",
+              o.away !== "N/A" &&
+              isRealOdds(o.away),
           )
           .map((o) => ({
             home: decimalToProb(parseFloat(o.home!)),
@@ -457,8 +459,10 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
             (o) =>
               o.over != null &&
               o.over !== "N/A" &&
+              isRealOdds(o.over) &&
               o.under != null &&
-              o.under !== "N/A",
+              o.under !== "N/A" &&
+              isRealOdds(o.under),
           )
           .map((o) => ({
             over: decimalToProb(parseFloat(o.over!)),
@@ -475,4 +479,11 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
 function decimalToProb(decimal: number): number {
   if (decimal <= 0) return 0;
   return 1 / decimal;
+}
+
+/** Decimal odds ≤ 1.02 are stubs, not real two-way prices. */
+const MIN_REAL_DECIMAL = 1.02;
+
+function isRealOdds(value: string): boolean {
+  return parseFloat(value) > MIN_REAL_DECIMAL;
 }
