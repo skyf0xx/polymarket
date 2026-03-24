@@ -2,7 +2,13 @@
   "abbreviations": {
     "basketball": {
       "sac": "Sacramento Kings",
-      "cha": "Charlotte Hornets"
+      "cha": "Charlotte Hornets",
+      "nop": "New Orleans Pelicans",
+      "nyk": "New York Knicks",
+      "den": "Denver Nuggets",
+      "phx": "Phoenix Suns",
+      "orl": "Orlando Magic",
+      "cle": "Cleveland Cavaliers"
     }
   },
   "nicknames": {
