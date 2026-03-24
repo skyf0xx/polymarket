@@ -54,8 +54,11 @@ async function getAvailableShares(
     if (!res.ok) return Infinity; // fail open — don't block trade
 
     const book = await res.json();
-    const levels: Array<{ price?: string | number; size?: string | number; [index: number]: string | number }> =
-      side === "BUY" ? (book.asks ?? []) : (book.bids ?? []);
+    const levels: Array<{
+      price?: string | number;
+      size?: string | number;
+      [index: number]: string | number;
+    }> = side === "BUY" ? (book.asks ?? []) : (book.bids ?? []);
 
     let totalShares = 0;
     for (const level of levels) {
@@ -111,7 +114,11 @@ export async function executeSignal(
     }
 
     // 3. Check orderbook liquidity and cap size
-    const availableShares = await getAvailableShares(signal.tokenId, signal.side, orderPrice);
+    const availableShares = await getAvailableShares(
+      signal.tokenId,
+      signal.side,
+      orderPrice,
+    );
     const size = Math.min(signal.size, availableShares);
 
     if (size * orderPrice < 5) {
@@ -133,7 +140,7 @@ export async function executeSignal(
         price: orderPrice,
         size,
         side: sdkSide,
-        expiration: Math.floor(Date.now() / 1000) + 300,
+        expiration: Math.floor(Date.now() / 1_000) + 300,
       },
       { tickSize, negRisk },
       OrderType.GTD,

@@ -72,9 +72,7 @@ export class Coordinator {
   // ── Start / Stop ────────────────────────────────────────────────
 
   start(): void {
-    log.info(
-      `Starting coordinator (DRY_RUN=${config.dryRun})`,
-    );
+    log.info(`Starting coordinator (DRY_RUN=${config.dryRun})`);
 
     // Wire up event listeners
     this.odds.on("odds_update", this.boundOnOddsUpdate);
@@ -370,7 +368,7 @@ export class Coordinator {
 
   // ── Maintenance ─────────────────────────────────────────────────
 
-  private static readonly ODDS_REHYDRATE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
+  private static readonly ODDS_REHYDRATE_INTERVAL_MS = 6 * 60 * 60 * 1_000; // 6h
 
   private async runMaintenance(): Promise<void> {
     if (this.destroyed) return;
@@ -381,13 +379,17 @@ export class Coordinator {
       // 0. Periodic odds rehydration — guards against WS drift over long runs
       const oddsAge = Date.now() - this.odds.lastHydrateAt;
       if (oddsAge >= Coordinator.ODDS_REHYDRATE_INTERVAL_MS) {
-        log.info(`Odds cache is ${Math.round(oddsAge / 3600000)}h old — rehydrating`);
+        log.info(
+          `Odds cache is ${Math.round(oddsAge / 3_600_000)}h old — rehydrating`,
+        );
         await this.odds.rehydrate();
       }
 
       // 1. Refresh Polymarket sports markets from Gamma
       const polymarkets = await fetchPolymarketSportsMarkets();
-      log.info(`Fetched ${polymarkets.length} active sports markets from Gamma`);
+      log.info(
+        `Fetched ${polymarkets.length} active sports markets from Gamma`,
+      );
 
       // 2. Run matcher on new/unmatched markets
       const { newMatches, total } = await this.matcher.runMatchCycle(
@@ -493,7 +495,9 @@ export class Coordinator {
       }
       const yesIsOver = match.outcomeMap.Yes.toLowerCase().includes("over");
       if (!yesIsOver && !match.outcomeMap.Yes.toLowerCase().includes("under")) {
-        log.warn(`Cannot determine Over/Under mapping for ${match.slug}, outcomeMap.Yes="${match.outcomeMap.Yes}"`);
+        log.warn(
+          `Cannot determine Over/Under mapping for ${match.slug}, outcomeMap.Yes="${match.outcomeMap.Yes}"`,
+        );
         return null;
       }
       if (isYesToken) {

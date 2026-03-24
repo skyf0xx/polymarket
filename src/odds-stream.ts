@@ -288,7 +288,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     }
 
     const delay = Math.min(
-      1000 * Math.pow(2, this.reconnectAttempt),
+      1_000 * Math.pow(2, this.reconnectAttempt),
       this.maxReconnectDelay,
     );
     this.reconnectAttempt++;

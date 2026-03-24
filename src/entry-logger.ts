@@ -56,7 +56,8 @@ function resolveBetOn(
   }
 
   // h2h / spreads — use the outcomeMap name
-  const teamName = tokenSide === "YES" ? match.outcomeMap.Yes : match.outcomeMap.No;
+  const teamName =
+    tokenSide === "YES" ? match.outcomeMap.Yes : match.outcomeMap.No;
   if (match.marketType === "spreads" && match.point !== undefined) {
     const sign = match.point > 0 ? `+${match.point}` : `${match.point}`;
     return `${teamName} ${sign}`;
@@ -85,8 +86,8 @@ export function appendBuyEntry(
     ...(match.point !== undefined && { point: match.point }),
     price,
     sharpProb,
-    edgePct: Math.round(netEdge * 10000) / 100,
-    kellyFraction: Math.round(kellyFraction * 10000) / 10000,
+    edgePct: Math.round(netEdge * 10_000) / 100,
+    kellyFraction: Math.round(kellyFraction * 10_000) / 10_000,
     shares,
     usdcRisk: Math.round(shares * price * 100) / 100,
     dryRun: config.dryRun,
