@@ -121,7 +121,7 @@ export class MarketMatcher {
         const timeDiff = Math.abs(
           (oddsLine?.commence ?? 0) - new Date(pm.endDate ?? 0).getTime(),
         );
-        if (oddsLine && timeDiff <= 48 * 60 * 60 * 1000) {
+        if (oddsLine && timeDiff <= 48 * 60 * 60 * 1_000) {
           const entry: MatchEntry = {
             ...det,
             commence: oddsLine.commence,
@@ -175,9 +175,9 @@ export class MarketMatcher {
                   polymarkets.find((p) => p.slug === match.slug)?.endDate ?? 0,
                 ).getTime(),
             );
-            if (timeDiff > 48 * 60 * 60 * 1000) {
+            if (timeDiff > 48 * 60 * 60 * 1_000) {
               log.warn(
-                `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (${(timeDiff / 3600000).toFixed(0)}h)`,
+                `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (${(timeDiff / 3_600_000).toFixed(0)}h)`,
               );
               continue;
             }
@@ -212,7 +212,7 @@ export class MarketMatcher {
   /** Remove expired matches (events that have started AND are no longer active). */
   pruneExpired(): number {
     const now = Date.now();
-    const ORPHAN_TTL_MS = 48 * 60 * 60 * 1000; // 48h
+    const ORPHAN_TTL_MS = 48 * 60 * 60 * 1_000; // 48h
     let pruned = 0;
     for (const [slug, entry] of this.table) {
       // Prune orphan matches (never linked to an odds line) after 48h

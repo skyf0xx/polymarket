@@ -20,14 +20,14 @@ const KNOWLEDGE_FILE = join(config.dataDir, "team-knowledge.json");
 
 interface KnowledgeData {
   abbreviations: Record<string, string>; // "okc" → "Oklahoma City Thunder"
-  nicknames: Record<string, string>;     // "Thunder" → "Oklahoma City Thunder"
+  nicknames: Record<string, string>; // "Thunder" → "Oklahoma City Thunder"
 }
 
 export interface ParsedSlug {
   sport: string;
   team1: string; // first team abbreviation in slug (typically away)
   team2: string; // second team abbreviation in slug (typically home)
-  date: string;  // YYYY-MM-DD
+  date: string; // YYYY-MM-DD
   marketType: MarketType;
   side?: "away" | "home"; // for spreads
   point?: number;
@@ -101,7 +101,7 @@ export class TeamKnowledge {
     const event = oddsEvents.find((e) => {
       const eMs = new Date(e.time).getTime();
       return (
-        Math.abs(eMs - slugDateMs) < 36 * 60 * 60 * 1000 &&
+        Math.abs(eMs - slugDateMs) < 36 * 60 * 60 * 1_000 &&
         looseNameMatch(e.home, homeFull) &&
         looseNameMatch(e.away, awayFull)
       );
@@ -163,14 +163,19 @@ export class TeamKnowledge {
     try {
       this.data = JSON.parse(readFileSync(KNOWLEDGE_FILE, "utf-8"));
       const s = this.stats;
-      log.info(`Team knowledge: ${s.abbreviations} abbrs, ${s.nicknames} nicknames`);
+      log.info(
+        `Team knowledge: ${s.abbreviations} abbrs, ${s.nicknames} nicknames`,
+      );
     } catch (err: unknown) {
-      log.warn(`Could not load team knowledge: ${err instanceof Error ? err.message : String(err)}`);
+      log.warn(
+        `Could not load team knowledge: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   private save(): void {
-    if (!existsSync(config.dataDir)) mkdirSync(config.dataDir, { recursive: true });
+    if (!existsSync(config.dataDir))
+      mkdirSync(config.dataDir, { recursive: true });
     const tmp = KNOWLEDGE_FILE + ".tmp";
     writeFileSync(tmp, JSON.stringify(this.data, null, 2));
     renameSync(tmp, KNOWLEDGE_FILE);
@@ -213,7 +218,8 @@ export function parseSlug(slug: string): ParsedSlug | null {
   const typePart = afterDate[0];
   let marketType: MarketType;
   if (typePart === "spread" || typePart === "spreads") marketType = "spreads";
-  else if (typePart === "moneyline" || typePart === "h2h" || typePart === "ml") marketType = "h2h";
+  else if (typePart === "moneyline" || typePart === "h2h" || typePart === "ml")
+    marketType = "h2h";
   else if (typePart === "totals" || typePart === "total") marketType = "totals";
   else return null;
 
@@ -250,7 +256,10 @@ export function resolveIndices(
   if (yesIdx === -1 || noIdx === -1) {
     const yp = outcomes.findIndex((o) => o.toLowerCase() === "yes");
     const np = outcomes.findIndex((o) => o.toLowerCase() === "no");
-    if (yp !== -1 && np !== -1) { yesIdx = yp; noIdx = np; }
+    if (yp !== -1 && np !== -1) {
+      yesIdx = yp;
+      noIdx = np;
+    }
   }
 
   // Nickname fallback (outcomes=["Thunder","76ers"] but outcomeMap has full names)

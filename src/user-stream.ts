@@ -119,7 +119,7 @@ export class UserStream {
   }
 
   private sendAuth(): void {
-    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const timestamp = Math.floor(Date.now() / 1_000).toString();
     const message = timestamp + "GET" + "/ws/user";
     const base64Secret = Buffer.from(this.creds.secret, "base64");
     const sig = createHmac("sha256", base64Secret)
@@ -308,13 +308,13 @@ export class UserStream {
     if (this.destroyed) return;
 
     const delay = Math.min(
-      1000 * Math.pow(2, this.reconnectAttempt),
+      1_000 * Math.pow(2, this.reconnectAttempt),
       MAX_RECONNECT_DELAY_MS,
     );
     this.reconnectAttempt++;
 
     log.info(
-      `User WS reconnecting in ${(delay / 1000).toFixed(1)}s (attempt ${this.reconnectAttempt})`,
+      `User WS reconnecting in ${(delay / 1_000).toFixed(1)}s (attempt ${this.reconnectAttempt})`,
     );
     setTimeout(async () => {
       try {

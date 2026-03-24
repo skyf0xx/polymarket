@@ -61,7 +61,7 @@ export function probeSignal(
     // The prob we actually used — compare this to the raw market values below
     resolvedProb,
     polyPrice,
-    netEdgePct: Math.round(netEdge * 10000) / 100,
+    netEdgePct: Math.round(netEdge * 10_000) / 100,
     // Full SharpLine markets — the raw source of truth
     sharpLine: {
       eventId: line.eventId,
@@ -138,22 +138,30 @@ export function probeRawOdds(
   if (spreads) {
     for (const s of spreads) {
       if (s.home > 0.95 || s.away > 0.95)
-        reasons.push(`spread_prob_too_high at ${s.point} (home=${s.home.toFixed(3)}, away=${s.away.toFixed(3)})`);
+        reasons.push(
+          `spread_prob_too_high at ${s.point} (home=${s.home.toFixed(3)}, away=${s.away.toFixed(3)})`,
+        );
     }
   }
 
   if (totals) {
     for (const t of totals) {
       if (t.over > 0.95 || t.under > 0.95)
-        reasons.push(`totals_prob_too_high at ${t.point} (over=${t.over.toFixed(3)}, under=${t.under.toFixed(3)})`);
-      if (t.over > 0.90 && t.under > 0.90)
-        reasons.push(`totals_both_sides_high at ${t.point} — impossible market`);
+        reasons.push(
+          `totals_prob_too_high at ${t.point} (over=${t.over.toFixed(3)}, under=${t.under.toFixed(3)})`,
+        );
+      if (t.over > 0.9 && t.under > 0.9)
+        reasons.push(
+          `totals_both_sides_high at ${t.point} — impossible market`,
+        );
     }
   }
 
   if (h2h) {
     if (h2h.home > 0.97 || h2h.away > 0.97)
-      reasons.push(`h2h_prob_too_high (home=${h2h.home.toFixed(3)}, away=${h2h.away.toFixed(3)})`);
+      reasons.push(
+        `h2h_prob_too_high (home=${h2h.home.toFixed(3)}, away=${h2h.away.toFixed(3)})`,
+      );
   }
 
   if (reasons.length === 0) return;
@@ -178,10 +186,7 @@ export function probeRawOdds(
 //
 // sampleRate: write 1 out of every N events (default 10)
 
-export function probeOddsHydration(
-  line: SharpLine,
-  sampleRate = 10,
-): void {
+export function probeOddsHydration(line: SharpLine, sampleRate = 10): void {
   if (Math.random() >= 1 / sampleRate) return;
   write({
     probe: "odds_snapshot",

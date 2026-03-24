@@ -30,7 +30,7 @@ const lastSignalTime = new Map<string, number>();
 export function isOnCooldown(tokenId: string): boolean {
   const last = lastSignalTime.get(tokenId);
   if (!last) return false;
-  return Date.now() - last < config.cooldownSeconds * 1000;
+  return Date.now() - last < config.cooldownSeconds * 1_000;
 }
 
 export function markSignaled(tokenId: string): void {

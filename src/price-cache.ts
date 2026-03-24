@@ -51,7 +51,11 @@ interface WsLastTradePrice {
   timestamp: string;
 }
 
-type PolymarketWsMessage = WsBook | WsPriceChange | WsLastTradePrice | { event_type: string };
+type PolymarketWsMessage =
+  | WsBook
+  | WsPriceChange
+  | WsLastTradePrice
+  | { event_type: string };
 
 // ── Events emitted ───────────────────────────────────────────────
 
@@ -90,7 +94,9 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
   async start(tokenIds: string[]): Promise<void> {
     for (const id of tokenIds) this.subscribedTokens.add(id);
     if (tokenIds.length === 0) {
-      log.info("No tokens to subscribe — deferring WS connection until tokens are added");
+      log.info(
+        "No tokens to subscribe — deferring WS connection until tokens are added",
+      );
       return;
     }
     await this.hydrateFromRest(tokenIds);
@@ -278,10 +284,15 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
   }
 
   private updateCache(tokenId: string, bestBid: number, bestAsk: number): void {
-    const price = bestBid > 0 && bestAsk > 0
-      ? (bestBid + bestAsk) / 2
-      : bestBid || bestAsk;
-    const entry: PriceEntry = { tokenId, price, bestBid, bestAsk, updatedAt: Date.now() };
+    const price =
+      bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : bestBid || bestAsk;
+    const entry: PriceEntry = {
+      tokenId,
+      price,
+      bestBid,
+      bestAsk,
+      updatedAt: Date.now(),
+    };
     this.cache.set(tokenId, entry);
     this.emit("price_update", tokenId, entry);
   }
@@ -310,7 +321,7 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
     if (this.destroyed) return;
 
     const delay = Math.min(
-      1000 * Math.pow(2, this.reconnectAttempt),
+      1_000 * Math.pow(2, this.reconnectAttempt),
       this.maxReconnectDelay,
     );
     this.reconnectAttempt++;
