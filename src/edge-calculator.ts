@@ -89,8 +89,11 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
   //    and win $1 or lose your stake.
   const kellyFraction = takerPrice < 1 ? netEdge / (1 - takerPrice) : 0;
 
-  // 6. Apply Kelly multiplier (quarter Kelly by default)
-  const adjustedKelly = kellyFraction * config.kellyFraction;
+  // 6. Apply Kelly multiplier (quarter Kelly by default), capped at MAX_KELLY_PCT
+  const adjustedKelly = Math.min(
+    kellyFraction * config.kellyFraction,
+    config.maxKellyPct,
+  );
 
   // 7. Suggested size in USDC
   let suggestedSize = bankroll * adjustedKelly;
