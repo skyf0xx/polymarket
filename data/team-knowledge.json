@@ -19,7 +19,14 @@
     "gsw": "Golden State Warriors",
     "dal": "Dallas Mavericks",
     "bkn": "Brooklyn Nets",
-    "por": "Portland Trail Blazers"
+    "por": "Portland Trail Blazers",
+    "sac": "Sacramento Kings",
+    "cha": "Charlotte Hornets",
+    "nop": "New Orleans Pelicans",
+    "nyk": "New York Knicks",
+    "den": "Denver Nuggets",
+    "phx": "Phoenix Suns",
+    "cle": "Cleveland Cavaliers"
   },
   "nicknames": {
     "Grizzlies": "Memphis Grizzlies",
@@ -42,6 +49,13 @@
     "Trail Blazers": "Portland Trail Blazers",
     "Bucks": "Milwaukee Bucks",
     "Clippers": "LA Clippers",
-    "Wizards": "Washington Wizards"
+    "Wizards": "Washington Wizards",
+    "Kings": "Sacramento Kings",
+    "Hornets": "Charlotte Hornets",
+    "Pelicans": "New Orleans Pelicans",
+    "Knicks": "New York Knicks",
+    "Cavaliers": "Cleveland Cavaliers",
+    "Nuggets": "Denver Nuggets",
+    "Suns": "Phoenix Suns"
   }
 }
