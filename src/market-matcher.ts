@@ -209,7 +209,7 @@ export class MarketMatcher {
     return { newMatches: newCount, total: this.table.size };
   }
 
-  /** Remove expired matches (events that have started AND are no longer active). */
+  /** Remove expired matches: orphans after 48h, commenced events after 4h grace window. */
   pruneExpired(): number {
     const now = Date.now();
     const ORPHAN_TTL_MS = 48 * 60 * 60 * 1_000; // 48h
@@ -221,8 +221,9 @@ export class MarketMatcher {
         pruned++;
         continue;
       }
-      // Only prune past-commence entries that are also inactive
-      if (entry.commence > 0 && entry.commence < now && !entry.active) {
+      // Prune past-commence entries after a 4h grace window (covers long games)
+      const GAME_GRACE_MS = 4 * 60 * 60 * 1_000;
+      if (entry.commence > 0 && entry.commence + GAME_GRACE_MS < now) {
         this.table.delete(slug);
         pruned++;
       }
