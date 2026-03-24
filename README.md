@@ -19,7 +19,7 @@ SIGNATURE_TYPE=2              # 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE
 
 ODDS_API_KEY=...
 ANTHROPIC_API_KEY=...         # Used for market matching (Haiku)
-SPORTS=basketball_nba,soccer_epl
+ODDS_API_SPORTS=basketball,football,american-football,tennis,baseball
 
 DRY_RUN=true                  # Set false to enable live execution
 ```

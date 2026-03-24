@@ -1,4 +1,24 @@
 {
-  "abbreviations": {},
-  "nicknames": {}
+  "abbreviations": {
+    "basketball": {
+      "sac": "Sacramento Kings",
+      "cha": "Charlotte Hornets"
+    }
+  },
+  "nicknames": {
+    "basketball": {
+      "Kings": "Sacramento Kings",
+      "Hornets": "Charlotte Hornets",
+      "Pelicans": "New Orleans Pelicans",
+      "Knicks": "New York Knicks",
+      "Magic": "Orlando Magic",
+      "Cavaliers": "Cleveland Cavaliers",
+      "Nuggets": "Denver Nuggets",
+      "Suns": "Phoenix Suns",
+      "Thunder": "Oklahoma City Thunder",
+      "Celtics": "Boston Celtics",
+      "Rockets": "Houston Rockets",
+      "Timberwolves": "Minnesota Timberwolves"
+    }
+  }
 }
