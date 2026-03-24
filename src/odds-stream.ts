@@ -98,18 +98,21 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   ): Promise<void> {
     try {
       // Step 1: fetch event IDs
-      const eventsPath =
-        status === "live" ? "/v3/events/live" : "/v3/events";
+      const eventsPath = status === "live" ? "/v3/events/live" : "/v3/events";
       const eventsUrl =
         `${config.oddsApiRestUrl}${eventsPath}` +
         `?apiKey=${config.oddsApiKey}` +
         `&sport=${sport}` +
         (status === "pending" ? `&status=pending` : "");
 
-      const eventsRes = await fetch(eventsUrl, { signal: AbortSignal.timeout(15_000) });
+      const eventsRes = await fetch(eventsUrl, {
+        signal: AbortSignal.timeout(15_000),
+      });
       if (!eventsRes.ok) {
         const body = await eventsRes.text().catch(() => "");
-      log.error(`Events fetch failed for ${sport} (${status}): HTTP ${eventsRes.status} ${eventsRes.statusText} — ${body}`);
+        log.error(
+          `Events fetch failed for ${sport} (${status}): HTTP ${eventsRes.status} ${eventsRes.statusText} — ${body}`,
+        );
         return;
       }
 
@@ -130,7 +133,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
 
       for (let i = 0; i < batches.length; i += HYDRATE_CONCURRENCY) {
         const chunk = batches.slice(i, i + HYDRATE_CONCURRENCY);
-        const results = await Promise.all(chunk.map((batch) => this.fetchOddsBatch(batch)));
+        const results = await Promise.all(
+          chunk.map((batch) => this.fetchOddsBatch(batch)),
+        );
         for (const lines of results) {
           for (const line of lines) {
             this.cache.set(line.eventId, line);
@@ -139,11 +144,16 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
         }
       }
 
-      log.info(`Hydrated ${hydrated}/${events.length} ${status} events for ${sport}`);
+      log.info(
+        `Hydrated ${hydrated}/${events.length} ${status} events for ${sport}`,
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      const cause = err instanceof Error && err.cause ? ` | cause: ${err.cause}` : "";
-      log.error(`REST hydration error for ${sport} (${status}): ${message}${cause}`);
+      const cause =
+        err instanceof Error && err.cause ? ` | cause: ${err.cause}` : "";
+      log.error(
+        `REST hydration error for ${sport} (${status}): ${message}${cause}`,
+      );
     }
   }
 
@@ -211,10 +221,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       case "updated":
       case "created": {
         // Only process updates for our target bookmaker
-        if (
-          msg.bookie.toLowerCase() !==
-          config.bookmakerId.toLowerCase()
-        ) {
+        if (msg.bookie.toLowerCase() !== config.bookmakerId.toLowerCase()) {
           break;
         }
 
@@ -230,10 +237,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
           if (line) {
             this.cache.set(msg.id, line);
             this.emit("odds_update", msg.id, line);
-            log.debug(
-              `created: added ${line.homeTeam} vs ${line.awayTeam}`,
-              { eventId: msg.id },
-            );
+            log.debug(`created: added ${line.homeTeam} vs ${line.awayTeam}`, {
+              eventId: msg.id,
+            });
           }
         }
         break;
@@ -315,16 +321,11 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   /**
    * Parse an odds-api.io /v3/odds response into a SharpLine.
    */
-  private parseOddsResponse(
-    item: OddsApiIoOddsResponse,
-  ): SharpLine | null {
-    const bookmakerMarkets =
-      item.bookmakers[config.bookmakerId] ?? null;
+  private parseOddsResponse(item: OddsApiIoOddsResponse): SharpLine | null {
+    const bookmakerMarkets = item.bookmakers[config.bookmakerId] ?? null;
 
     if (!bookmakerMarkets) {
-      log.warn(
-        `No ${config.bookmakerId} data for event ${item.id}, skipping`,
-      );
+      log.warn(`No ${config.bookmakerId} data for event ${item.id}, skipping`);
       return null;
     }
 
@@ -357,7 +358,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        log.error(`Odds batch fetch failed: HTTP ${res.status} ${res.statusText} — ${body}`);
+        log.error(
+          `Odds batch fetch failed: HTTP ${res.status} ${res.statusText} — ${body}`,
+        );
         return [];
       }
       const data: OddsApiIoOddsResponse[] = await res.json();
@@ -387,7 +390,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        log.error(`fetchEventOdds failed for ${eventId}: HTTP ${res.status} ${res.statusText} — ${body}`);
+        log.error(
+          `fetchEventOdds failed for ${eventId}: HTTP ${res.status} ${res.statusText} — ${body}`,
+        );
         return null;
       }
 
@@ -395,7 +400,8 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       return this.parseOddsResponse(data);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      const cause = err instanceof Error && err.cause ? ` | cause: ${err.cause}` : "";
+      const cause =
+        err instanceof Error && err.cause ? ` | cause: ${err.cause}` : "";
       log.error(`fetchEventOdds error for ${eventId}: ${message}${cause}`);
       return null;
     }
@@ -404,10 +410,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   /**
    * Merge markets from a WS update into an existing SharpLine.
    */
-  private mergeWsMarkets(
-    line: SharpLine,
-    markets: OddsApiIoMarket[],
-  ): void {
+  private mergeWsMarkets(line: SharpLine, markets: OddsApiIoMarket[]): void {
     this.applyMarkets(line, markets);
     line.updatedAt = Date.now();
   }
@@ -418,12 +421,11 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
    */
   private applyMarkets(line: SharpLine, markets: OddsApiIoMarket[]): void {
     for (const market of markets) {
-      const odds = market.odds[0];
-      if (!odds) continue;
-
       const name = market.name.toLowerCase();
 
       if (name === "ml") {
+        const odds = market.odds[0];
+        if (!odds) continue;
         if (odds.home != null && odds.away != null) {
           line.markets.h2h = {
             home: decimalToProb(parseFloat(odds.home)),
@@ -434,21 +436,35 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
           };
         }
       } else if (name === "spread") {
-        if (odds.home != null && odds.away != null) {
-          line.markets.spreads = {
-            home: decimalToProb(parseFloat(odds.home)),
-            away: decimalToProb(parseFloat(odds.away)),
-            point: odds.hdp ?? 0,
-          };
-        }
+        // Store all lines where both sides are present — coordinator picks by match.point
+        line.markets.spreads = market.odds
+          .filter(
+            (o) =>
+              o.home != null &&
+              o.home !== "N/A" &&
+              o.away != null &&
+              o.away !== "N/A",
+          )
+          .map((o) => ({
+            home: decimalToProb(parseFloat(o.home!)),
+            away: decimalToProb(parseFloat(o.away!)),
+            point: o.hdp ?? 0,
+          }));
       } else if (name === "totals") {
-        if (odds.over != null && odds.under != null) {
-          line.markets.totals = {
-            over: decimalToProb(parseFloat(odds.over)),
-            under: decimalToProb(parseFloat(odds.under)),
-            point: odds.hdp ?? 0,
-          };
-        }
+        // Store all lines where both sides are present — coordinator picks by match.point
+        line.markets.totals = market.odds
+          .filter(
+            (o) =>
+              o.over != null &&
+              o.over !== "N/A" &&
+              o.under != null &&
+              o.under !== "N/A",
+          )
+          .map((o) => ({
+            over: decimalToProb(parseFloat(o.over!)),
+            under: decimalToProb(parseFloat(o.under!)),
+            point: o.hdp ?? 0,
+          }));
       }
     }
   }

@@ -458,9 +458,19 @@ export class Coordinator {
     }
 
     if (match.marketType === "spreads") {
-      const spreads = marketData as { home: number; away: number; point: number };
-      const yesTeam = match.outcomeMap.Yes;
-      const yesIsHome = yesTeam === line.homeTeam;
+      const allSpreads = marketData as {
+        home: number;
+        away: number;
+        point: number;
+      }[];
+      const spreads = findByPoint(allSpreads, match.point);
+      if (!spreads) {
+        log.warn(
+          `No spread line at point=${match.point} for ${match.slug} (available: ${allSpreads.map((s) => s.point).join(", ")})`,
+        );
+        return null;
+      }
+      const yesIsHome = match.outcomeMap.Yes === line.homeTeam;
       if (isYesToken) {
         return yesIsHome ? spreads.home : spreads.away;
       } else {
@@ -469,7 +479,18 @@ export class Coordinator {
     }
 
     if (match.marketType === "totals") {
-      const totals = marketData as { over: number; under: number; point: number };
+      const allTotals = marketData as {
+        over: number;
+        under: number;
+        point: number;
+      }[];
+      const totals = findByPoint(allTotals, match.point);
+      if (!totals) {
+        log.warn(
+          `No totals line at point=${match.point} for ${match.slug} (available: ${allTotals.map((t) => t.point).join(", ")})`,
+        );
+        return null;
+      }
       const yesIsOver = match.outcomeMap.Yes.toLowerCase().includes("over");
       if (!yesIsOver && !match.outcomeMap.Yes.toLowerCase().includes("under")) {
         log.warn(`Cannot determine Over/Under mapping for ${match.slug}, outcomeMap.Yes="${match.outcomeMap.Yes}"`);
@@ -484,4 +505,23 @@ export class Coordinator {
 
     return null;
   }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Find a spread/totals line whose .point matches the target within 0.05.
+ * Tries exact match first, then negated target to handle sign convention
+ * differences between Polymarket points (often unsigned) and Betfair hdp
+ * (signed, from home team's perspective).
+ */
+function findByPoint<T extends { point: number }>(
+  lines: T[],
+  target: number | undefined,
+): T | undefined {
+  if (target == null || lines.length === 0) return undefined;
+  return (
+    lines.find((l) => Math.abs(l.point - target) < 0.05) ??
+    lines.find((l) => Math.abs(l.point + target) < 0.05)
+  );
 }

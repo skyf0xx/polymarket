@@ -49,8 +49,7 @@ function resolveBetOn(
   line: SharpLine,
 ): string {
   if (match.marketType === "totals") {
-    const totals = line.markets.totals;
-    const point = totals?.point ?? match.point;
+    const point = match.point;
     const yesIsOver = match.outcomeMap.Yes.toLowerCase().includes("over");
     const isOver = tokenSide === "YES" ? yesIsOver : !yesIsOver;
     return `${isOver ? "Over" : "Under"}${point !== undefined ? ` ${point}` : ""}`;
