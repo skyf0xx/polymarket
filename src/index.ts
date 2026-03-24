@@ -112,7 +112,7 @@ async function main(): Promise<void> {
   log.info(`  Bankroll: $${bankroll.toFixed(2)}`);
 
   if (config.oddsApiSports.length === 0) {
-    log.error("ODDS_API_SPORTS is empty — set comma-separated sport keys (e.g. basketball_nba,soccer_epl)");
+    log.error("ODDS_API_SPORTS is empty — set comma-separated sport keys (e.g. basketball,football,american-football)");
     process.exit(1);
   }
 

@@ -468,11 +468,15 @@ Rules:
         return [];
       }
 
+      // Derive sportKey from the matched odds event — the LLM's value is unreliable
+      const matchedEvent = oddsEvents.find((e) => e.id === r.oddsApiEventId);
+      const sportKey = matchedEvent?.sport ?? r.sportKey;
+
       return [
         {
           slug: r.slug,
           oddsApiEventId: r.oddsApiEventId,
-          sportKey: r.sportKey,
+          sportKey,
           homeTeam: r.homeTeam,
           awayTeam: r.awayTeam,
           outcomeMap: r.outcomeMap,
