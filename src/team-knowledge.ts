@@ -19,8 +19,8 @@ const log = createLogger("team-knowledge");
 const KNOWLEDGE_FILE = join(config.dataDir, "team-knowledge.json");
 
 interface KnowledgeData {
-  abbreviations: Record<string, string>; // "okc" → "Oklahoma City Thunder"
-  nicknames: Record<string, string>; // "Thunder" → "Oklahoma City Thunder"
+  abbreviations: Record<string, Record<string, string>>; // sport → { "okc" → "Oklahoma City Thunder" }
+  nicknames: Record<string, Record<string, string>>; // sport → { "Thunder" → "Oklahoma City Thunder" }
 }
 
 export interface ParsedSlug {
@@ -46,19 +46,21 @@ export class TeamKnowledge {
    */
   learn(entry: MatchEntry, pm: PolymarketMarket): void {
     const parsed = parseSlug(entry.slug);
+    const sport = entry.sportKey;
+    if (!sport) return;
     let changed = false;
 
     // Abbreviation learning: team1 in slug = away, team2 = home (Polymarket convention)
     if (parsed) {
-      changed = this.setAbbr(parsed.team1, entry.awayTeam) || changed;
-      changed = this.setAbbr(parsed.team2, entry.homeTeam) || changed;
+      changed = this.setAbbr(sport, parsed.team1, entry.awayTeam) || changed;
+      changed = this.setAbbr(sport, parsed.team2, entry.homeTeam) || changed;
     }
 
     // Nickname learning: if an outcome string isn't a full team name, learn the mapping
     for (const outcome of pm.outcomes ?? []) {
       for (const fullName of [entry.outcomeMap.Yes, entry.outcomeMap.No]) {
         if (isNicknameOf(outcome, fullName)) {
-          changed = this.setNickname(outcome, fullName) || changed;
+          changed = this.setNickname(sport, outcome, fullName) || changed;
         }
       }
     }
@@ -92,8 +94,9 @@ export class TeamKnowledge {
     if (parsed.marketType === "h2h") return null;
     if (parsed.marketType === "spreads" && !parsed.side) return null;
 
-    const awayFull = this.data.abbreviations[parsed.team1.toLowerCase()];
-    const homeFull = this.data.abbreviations[parsed.team2.toLowerCase()];
+    const sportAbbrs = this.data.abbreviations[parsed.sport] ?? {};
+    const awayFull = sportAbbrs[parsed.team1.toLowerCase()];
+    const homeFull = sportAbbrs[parsed.team2.toLowerCase()];
     if (!awayFull || !homeFull) return null;
 
     // Find the matching odds event (±36h window)
@@ -132,29 +135,45 @@ export class TeamKnowledge {
   }
 
   /** Full team name for a short nickname, or null if not known. */
-  lookupNickname(nickname: string): string | null {
-    return this.data.nicknames[nickname] ?? null;
+  lookupNickname(sport: string, nickname: string): string | null {
+    return this.data.nicknames[sport]?.[nickname] ?? null;
   }
 
-  get stats(): { abbreviations: number; nicknames: number } {
+  get stats(): { abbreviations: number; nicknames: number; sports: string[] } {
+    let abbreviations = 0;
+    let nicknames = 0;
+    for (const sport of Object.keys(this.data.abbreviations)) {
+      abbreviations += Object.keys(this.data.abbreviations[sport]).length;
+    }
+    for (const sport of Object.keys(this.data.nicknames)) {
+      nicknames += Object.keys(this.data.nicknames[sport]).length;
+    }
     return {
-      abbreviations: Object.keys(this.data.abbreviations).length,
-      nicknames: Object.keys(this.data.nicknames).length,
+      abbreviations,
+      nicknames,
+      sports: Array.from(
+        new Set([
+          ...Object.keys(this.data.abbreviations),
+          ...Object.keys(this.data.nicknames),
+        ]),
+      ),
     };
   }
 
   // ── Private ────────────────────────────────────────────────────
 
-  private setAbbr(abbr: string, fullName: string): boolean {
+  private setAbbr(sport: string, abbr: string, fullName: string): boolean {
     const key = abbr.toLowerCase();
-    if (this.data.abbreviations[key] === fullName) return false;
-    this.data.abbreviations[key] = fullName;
+    if (!this.data.abbreviations[sport]) this.data.abbreviations[sport] = {};
+    if (this.data.abbreviations[sport][key] === fullName) return false;
+    this.data.abbreviations[sport][key] = fullName;
     return true;
   }
 
-  private setNickname(nickname: string, fullName: string): boolean {
-    if (this.data.nicknames[nickname] === fullName) return false;
-    this.data.nicknames[nickname] = fullName;
+  private setNickname(sport: string, nickname: string, fullName: string): boolean {
+    if (!this.data.nicknames[sport]) this.data.nicknames[sport] = {};
+    if (this.data.nicknames[sport][nickname] === fullName) return false;
+    this.data.nicknames[sport][nickname] = fullName;
     return true;
   }
 
@@ -164,7 +183,7 @@ export class TeamKnowledge {
       this.data = JSON.parse(readFileSync(KNOWLEDGE_FILE, "utf-8"));
       const s = this.stats;
       log.info(
-        `Team knowledge: ${s.abbreviations} abbrs, ${s.nicknames} nicknames`,
+        `Team knowledge: ${s.abbreviations} abbrs, ${s.nicknames} nicknames across ${s.sports.length} sports`,
       );
     } catch (err: unknown) {
       log.warn(
