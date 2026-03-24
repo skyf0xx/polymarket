@@ -95,14 +95,21 @@ export class MarketMatcher {
       return { newMatches: 0, total: this.table.size };
     }
 
-    // Build slim Odds API event list (shared by deterministic + LLM paths)
-    const oddsEvents = [...oddsLines.values()].map((line) => ({
-      id: line.eventId,
-      sport: line.sportKey,
-      home: line.homeTeam,
-      away: line.awayTeam,
-      time: new Date(line.commence).toISOString(),
-    }));
+    // Build slim Odds API event list — deduplicated by eventId (oddsLines has one
+    // entry per market type per event, so h2h/spreads/totals all share the same game).
+    const seenEventIds = new Set<string>();
+    const oddsEvents: Array<{ id: string; sport: string; home: string; away: string; time: string }> = [];
+    for (const line of oddsLines.values()) {
+      if (seenEventIds.has(line.eventId)) continue;
+      seenEventIds.add(line.eventId);
+      oddsEvents.push({
+        id: line.eventId,
+        sport: line.sportKey,
+        home: line.homeTeam,
+        away: line.awayTeam,
+        time: new Date(line.commence).toISOString(),
+      });
+    }
 
     if (oddsEvents.length === 0) {
       log.warn("No odds events available — skipping matcher");
@@ -151,14 +158,19 @@ export class MarketMatcher {
     log.info(`${needsLlm.length} market(s) need LLM matching...`);
 
     const BATCH_SIZE = 10;
-    const LLM_INTER_BATCH_DELAY_MS = 5_000; // 5s between calls to avoid rate limits
+    // Anthropic free tier: 50k input tokens/min. Haiku prompt ~1500 tokens/batch.
+    // Allow max 30k tokens/min (60% of limit) → 20s/batch minimum.
+    const TOKEN_BUDGET_PER_MIN = 30_000;
+    const APPROX_TOKENS_PER_BATCH = 1_500;
+    const MIN_DELAY_MS = Math.ceil((APPROX_TOKENS_PER_BATCH / TOKEN_BUDGET_PER_MIN) * 60_000); // ~3s
+    const LLM_INTER_BATCH_DELAY_MS = Math.max(MIN_DELAY_MS, 20_000); // floor at 20s to be safe
     const batches = chunk(needsLlm, BATCH_SIZE);
     let newCount = deterministicCount;
     let totalLlmMatches = 0;
 
     for (let i = 0; i < batches.length; i++) {
       if (i > 0) {
-        log.info(`Waiting ${LLM_INTER_BATCH_DELAY_MS / 1000}s before next LLM batch...`);
+        log.info(`Waiting ${LLM_INTER_BATCH_DELAY_MS / 1000}s before next LLM batch (rate limit guard)...`);
         await new Promise((r) => setTimeout(r, LLM_INTER_BATCH_DELAY_MS));
       }
 
@@ -412,28 +424,38 @@ Rules:
       `[matcher] LLM payload: ${oddsEvents.length} odds events, ${polymarkets.length} markets, ${(reqBody.length / 1024).toFixed(1)}KB (${reqBody.length} bytes)`,
     );
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout
+    let res: Response | undefined;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90_000);
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": config.anthropicApiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: reqBody,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": config.anthropicApiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: reqBody,
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeout));
+      if (res.status !== 429) break;
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Anthropic API error ${res.status}: ${errText}`);
+      // Respect retry-after header if present, else exponential backoff
+      const retryAfter = res.headers.get("retry-after");
+      const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1_000 : (attempt + 1) * 30_000;
+      log.warn(`Rate limited (429). Waiting ${waitMs / 1000}s before retry ${attempt + 1}/3...`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+
+    if (!res!.ok) {
+      const errText = await res!.text();
+      throw new Error(`Anthropic API error ${res!.status}: ${errText}`);
     }
 
     const data: {
       content?: Array<{ type: string; input?: { matches: unknown[] } }>;
-    } = await res.json();
+    } = await res!.json();
     const block = data.content?.find((c) => c.type === "tool_use");
     if (!block?.input) {
       throw new Error(
