@@ -333,6 +333,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     const line: SharpLine = {
       eventId,
       sportKey: item.sport?.slug ?? "unknown",
+      leagueSlug: item.league?.slug ?? "unknown",
       homeTeam: item.home,
       awayTeam: item.away,
       commence: new Date(item.date).getTime(),

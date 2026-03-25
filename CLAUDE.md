@@ -50,7 +50,7 @@ See `env_example.txt` for all vars. Key ones:
 
 - `DRY_RUN=true` — log signals only, no execution (default)
 - Bankroll is fetched on-chain from the funder wallet's USDC balance at startup and refreshed every maintenance cycle
-- `SPORTS` — comma-separated Odds API sport keys (e.g. `basketball_nba,soccer_epl`)
+- `SPORTS` — comma-separated Odds API sport keys (e.g. `nba,epl`)
 - `ANTHROPIC_API_KEY` — used by market-matcher for Haiku LLM matching only
 
 ## Dependencies
