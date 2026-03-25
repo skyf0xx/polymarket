@@ -412,8 +412,7 @@ export class Coordinator {
       );
 
       // 2. Re-hydrate team knowledge (picks up new leagues / team changes)
-      const leagues = [...new Set([...this.odds.getAllLines().values()].map((l) => l.leagueSlug))];
-      await this.matcher.hydrateTeams(leagues);
+      await this.matcher.hydrateTeams(config.gammaLeagues);
 
       // 3. Run matcher on new/unmatched markets
       const { newMatches, total } = await this.matcher.runMatchCycle(
