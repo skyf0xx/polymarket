@@ -2,7 +2,9 @@
   "abbreviations": {
     "usa-nba": {
       "lal": "Indiana Pacers",
-      "ind": "Los Angeles Lakers"
+      "ind": "Los Angeles Lakers",
+      "hou": "Houston Rockets",
+      "min": "Minnesota Timberwolves"
     },
     "usa-ncaa-division-i-national-championship": {
       "ala": "Alabama Crimson Tide",
