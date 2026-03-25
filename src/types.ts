@@ -24,6 +24,7 @@ export interface TotalsMarket {
 export interface SharpLine {
   eventId: string;
   sportKey: string;
+  leagueSlug: string; // e.g. "nba", "ncaab", "epl" — from Odds API league.slug
   homeTeam: string;
   awayTeam: string;
   commence: number; // unix ms
@@ -54,6 +55,7 @@ export interface MatchEntry {
   slug: string;
   oddsApiEventId: string;
   sportKey: string;
+  leagueSlug?: string; // e.g. "nba", "ncaab" — from Odds API league.slug
   homeTeam: string;
   awayTeam: string;
   outcomeMap: { Yes: string; No: string }; // "Yes" → "Los Angeles Lakers"

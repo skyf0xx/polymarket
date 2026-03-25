@@ -98,13 +98,14 @@ export class MarketMatcher {
     // Build slim Odds API event list — deduplicated by eventId (oddsLines has one
     // entry per market type per event, so h2h/spreads/totals all share the same game).
     const seenEventIds = new Set<string>();
-    const oddsEvents: Array<{ id: string; sport: string; home: string; away: string; time: string }> = [];
+    const oddsEvents: Array<{ id: string; sport: string; league: string; home: string; away: string; time: string }> = [];
     for (const line of oddsLines.values()) {
       if (seenEventIds.has(line.eventId)) continue;
       seenEventIds.add(line.eventId);
       oddsEvents.push({
         id: line.eventId,
         sport: line.sportKey,
+        league: line.leagueSlug,
         home: line.homeTeam,
         away: line.awayTeam,
         time: new Date(line.commence).toISOString(),
@@ -303,6 +304,7 @@ export class MarketMatcher {
     oddsEvents: Array<{
       id: string;
       sport: string;
+      league: string;
       home: string;
       away: string;
       time: string;
@@ -496,15 +498,17 @@ Rules:
         return [];
       }
 
-      // Derive sportKey from the matched odds event — the LLM's value is unreliable
+      // Derive sportKey/leagueSlug from the matched odds event — the LLM's value is unreliable
       const matchedEvent = oddsEvents.find((e) => e.id === r.oddsApiEventId);
       const sportKey = matchedEvent?.sport ?? r.sportKey;
+      const leagueSlug = matchedEvent?.league;
 
       return [
         {
           slug: r.slug,
           oddsApiEventId: r.oddsApiEventId,
           sportKey,
+          leagueSlug,
           homeTeam: r.homeTeam,
           awayTeam: r.awayTeam,
           outcomeMap: r.outcomeMap,

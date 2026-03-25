@@ -46,21 +46,22 @@ export class TeamKnowledge {
    */
   learn(entry: MatchEntry, pm: PolymarketMarket): void {
     const parsed = parseSlug(entry.slug);
-    const sport = entry.sportKey;
-    if (!sport) return;
+    // Use league slug (e.g. "nba", "ncaab") for granular keying; fall back to sportKey
+    const league = entry.leagueSlug || entry.sportKey;
+    if (!league) return;
     let changed = false;
 
     // Abbreviation learning: team1 in slug = away, team2 = home (Polymarket convention)
     if (parsed) {
-      changed = this.setAbbr(sport, parsed.team1, entry.awayTeam) || changed;
-      changed = this.setAbbr(sport, parsed.team2, entry.homeTeam) || changed;
+      changed = this.setAbbr(league, parsed.team1, entry.awayTeam) || changed;
+      changed = this.setAbbr(league, parsed.team2, entry.homeTeam) || changed;
     }
 
     // Nickname learning: if an outcome string isn't a full team name, learn the mapping
     for (const outcome of pm.outcomes ?? []) {
       for (const fullName of [entry.outcomeMap.Yes, entry.outcomeMap.No]) {
         if (isNicknameOf(outcome, fullName)) {
-          changed = this.setNickname(sport, outcome, fullName) || changed;
+          changed = this.setNickname(league, outcome, fullName) || changed;
         }
       }
     }
@@ -81,6 +82,7 @@ export class TeamKnowledge {
     oddsEvents: Array<{
       id: string;
       sport: string;
+      league: string;
       home: string;
       away: string;
       time: string;
@@ -94,44 +96,59 @@ export class TeamKnowledge {
     if (parsed.marketType === "h2h") return null;
     if (parsed.marketType === "spreads" && !parsed.side) return null;
 
-    const sportAbbrs = this.data.abbreviations[parsed.sport] ?? {};
-    const awayFull = sportAbbrs[parsed.team1.toLowerCase()];
-    const homeFull = sportAbbrs[parsed.team2.toLowerCase()];
-    if (!awayFull || !homeFull) return null;
-
-    // Find the matching odds event (±36h window)
-    const slugDateMs = new Date(parsed.date).getTime();
-    const event = oddsEvents.find((e) => {
-      const eMs = new Date(e.time).getTime();
-      return (
-        Math.abs(eMs - slugDateMs) < 36 * 60 * 60 * 1_000 &&
-        looseNameMatch(e.home, homeFull) &&
-        looseNameMatch(e.away, awayFull)
+    // Search all league-level buckets that match the slug's generic sport.
+    // e.g. slug sport "basketball" checks abbreviations under "nba", "ncaab", etc.
+    const leagueKeys = Object.keys(this.data.abbreviations).filter((key) => {
+      // Match if the league key's events share the same generic sport
+      // We also accept exact match for backwards compat with old sportKey-keyed data
+      return key === parsed.sport || oddsEvents.some(
+        (e) => e.league === key && e.sport === parsed.sport,
       );
     });
-    if (!event) return null;
 
-    const outcomeMap = buildOutcomeMap(parsed, awayFull, homeFull);
-    const outcomes = pm.outcomes ?? [];
-    const { yesIdx, noIdx } = resolveIndices(outcomes, outcomeMap);
-    if (yesIdx === -1 || noIdx === -1) return null;
+    for (const league of leagueKeys) {
+      const sportAbbrs = this.data.abbreviations[league] ?? {};
+      const awayFull = sportAbbrs[parsed.team1.toLowerCase()];
+      const homeFull = sportAbbrs[parsed.team2.toLowerCase()];
+      if (!awayFull || !homeFull) continue;
 
-    return {
-      slug: pm.slug,
-      oddsApiEventId: event.id,
-      sportKey: parsed.sport,
-      homeTeam: homeFull,
-      awayTeam: awayFull,
-      outcomeMap,
-      marketType: parsed.marketType,
-      point: parsed.point,
-      confidence: "high",
-      matchedAt: now,
-      tokenIds: {
-        yes: pm.tokenIds?.[yesIdx] ?? "",
-        no: pm.tokenIds?.[noIdx] ?? "",
-      },
-    };
+      // Find the matching odds event (±36h window)
+      const slugDateMs = new Date(parsed.date).getTime();
+      const event = oddsEvents.find((e) => {
+        const eMs = new Date(e.time).getTime();
+        return (
+          Math.abs(eMs - slugDateMs) < 36 * 60 * 60 * 1_000 &&
+          looseNameMatch(e.home, homeFull) &&
+          looseNameMatch(e.away, awayFull)
+        );
+      });
+      if (!event) continue;
+
+      const outcomeMap = buildOutcomeMap(parsed, awayFull, homeFull);
+      const outcomes = pm.outcomes ?? [];
+      const { yesIdx, noIdx } = resolveIndices(outcomes, outcomeMap);
+      if (yesIdx === -1 || noIdx === -1) continue;
+
+      return {
+        slug: pm.slug,
+        oddsApiEventId: event.id,
+        sportKey: event.sport,
+        leagueSlug: event.league,
+        homeTeam: homeFull,
+        awayTeam: awayFull,
+        outcomeMap,
+        marketType: parsed.marketType,
+        point: parsed.point,
+        confidence: "high",
+        matchedAt: now,
+        tokenIds: {
+          yes: pm.tokenIds?.[yesIdx] ?? "",
+          no: pm.tokenIds?.[noIdx] ?? "",
+        },
+      };
+    }
+
+    return null;
   }
 
   /** Full team name for a short nickname, or null if not known. */
