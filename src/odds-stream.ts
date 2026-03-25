@@ -169,8 +169,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       `${config.oddsApiWsUrl}` +
       `?apiKey=${config.oddsApiKey}` +
       `&markets=ML,Spread,Totals` +
-      `&sport=${sports}` +
-      `&status=prematch`;
+      `&sport=${sports}`; //TODO: Also filter by league?
 
     log.info(`Connecting Odds API WS: sports=${sports}`);
 
