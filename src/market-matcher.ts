@@ -181,26 +181,31 @@ export class MarketMatcher {
 
       const batch = batches[i];
       log.info(
-        `LLM batch ${i + 1}/${batches.length}: ${batch.length} market(s), ${oddsEvents.length} odds events`,
+        `LLM batch ${i + 1}/${batches.length}: ${batch.length} market(s), ${oddsEvents.length} odds events total`,
       );
 
       try {
-        const matches = await this.callLlmMatcher(oddsEvents, batch);
+        // Pre-filter odds events to only dates present in this batch's slugs
+        const batchDates = new Set(
+          batch.map((pm) => pm.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean),
+        );
+        const filteredOddsEvents = oddsEvents.filter((e) =>
+          batchDates.has(e.time.slice(0, 10)),
+        );
+        const matches = await this.callLlmMatcher(filteredOddsEvents, batch);
         totalLlmMatches += matches.length;
 
         for (const match of matches) {
-          // Validate: date within ±48h; also set commence from the odds line
+          // Validate: slug date matches odds event date; also set commence from the odds line
           const oddsLine = oddsLines.get(match.oddsApiEventId);
           if (oddsLine) {
-            const timeDiff = Math.abs(
-              oddsLine.commence -
-                new Date(
-                  polymarkets.find((p) => p.slug === match.slug)?.endDate ?? 0,
-                ).getTime(),
-            );
-            if (timeDiff > 48 * 60 * 60 * 1_000) {
+            const slugDate = match.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+            const oddsDate = new Date(oddsLine.commence).toISOString().slice(0, 10);
+            if (!slugDate) {
+              log.warn(`No date found in slug ${match.slug}, skipping date validation`);
+            } else if (slugDate !== oddsDate) {
               log.warn(
-                `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (${(timeDiff / 3_600_000).toFixed(0)}h)`,
+                `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (slug=${slugDate}, odds=${oddsDate})`,
               );
               continue;
             }
