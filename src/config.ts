@@ -89,6 +89,7 @@ export const config = {
   staleCacheThresholdMs: envNum("STALE_CACHE_THRESHOLD_MS", 60_000), // 60s
 
   // Operation
+  verbose: envBool("VERBOSE", false),
   dryRun: envBool("DRY_RUN", true),
   dataDir: env("DATA_DIR", "./data"),
   credsFile: env("CREDS_FILE", "./api_creds.json"),

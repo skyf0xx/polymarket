@@ -44,12 +44,11 @@ function log(
     ...(data && { data }),
   };
 
-  // Always write to console
   if (level === "error") {
     console.error(formatConsole(entry));
   } else if (level === "warn") {
     console.warn(formatConsole(entry));
-  } else {
+  } else if (config.verbose) {
     console.log(formatConsole(entry));
   }
 
