@@ -71,6 +71,9 @@ export const config = {
   userWsUrl:
     "wss://ws-subscriptions-clob.polymarket.com/ws/user",
 
+  // Strategy
+  marketMaker: envBool("MARKET_MAKER", false),
+
   // Edge & Sizing
   minEdge: envNum("MIN_EDGE", 0.02),
   kellyFraction: envNum("KELLY_FRACTION", 0.25),

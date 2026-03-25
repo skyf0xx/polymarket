@@ -6,7 +6,15 @@ import { ClobClient, OrderType, Side } from "@polymarket/clob-client";
 import type { TickSize } from "@polymarket/clob-client";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
+import type { PendingOrders } from "./pending-orders.js";
 import type { TradeSignal } from "./types.js";
+
+const TICK_MAP: Record<string, number> = {
+  "0.1": 0.1,
+  "0.01": 0.01,
+  "0.001": 0.001,
+  "0.0001": 0.0001,
+};
 
 const log = createLogger("executor");
 
@@ -38,27 +46,31 @@ async function getMarketInfo(slug: string): Promise<MarketInfo> {
 
 // ── Orderbook Depth Check ─────────────────────────────────────────
 
+interface OrderbookResult {
+  availableShares: number;
+  bestBid: number;
+  bestAsk: number;
+}
+
 /**
  * Fetch orderbook and return available shares on the relevant side
- * that are fillable at or better than the given limit price.
- * For BUY: sum ask-side shares where ask price <= limitPrice.
- * For SELL: sum bid-side shares where bid price >= limitPrice.
+ * that are fillable at or better than the given limit price,
+ * plus the current best bid/ask for maker pricing.
  */
-async function getAvailableShares(
+async function getOrderbookInfo(
   tokenId: string,
   side: "BUY" | "SELL",
   limitPrice: number,
-): Promise<number> {
+): Promise<OrderbookResult> {
   try {
     const res = await fetch(`${config.clobApiUrl}/orderbook/${tokenId}`);
-    if (!res.ok) return Infinity; // fail open — don't block trade
+    if (!res.ok) return { availableShares: Infinity, bestBid: 0, bestAsk: 1 };
 
     const book = await res.json();
-    const levels: Array<{
-      price?: string | number;
-      size?: string | number;
-      [index: number]: string | number;
-    }> = side === "BUY" ? (book.asks ?? []) : (book.bids ?? []);
+    const bids: Array<{ price?: string | number; size?: string | number; [index: number]: string | number }> = book.bids ?? [];
+    const asks: Array<{ price?: string | number; size?: string | number; [index: number]: string | number }> = book.asks ?? [];
+
+    const levels = side === "BUY" ? asks : bids;
 
     let totalShares = 0;
     for (const level of levels) {
@@ -70,9 +82,13 @@ async function getAvailableShares(
         totalShares += size;
       }
     }
-    return totalShares;
+
+    const bestBid = bids.length > 0 ? Number(bids[0].price ?? bids[0][0] ?? 0) : 0;
+    const bestAsk = asks.length > 0 ? Number(asks[0].price ?? asks[0][0] ?? 1) : 1;
+
+    return { availableShares: totalShares, bestBid, bestAsk };
   } catch {
-    return Infinity; // fail open
+    return { availableShares: Infinity, bestBid: 0, bestAsk: 1 };
   }
 }
 
@@ -81,6 +97,7 @@ async function getAvailableShares(
 export async function executeSignal(
   client: ClobClient,
   signal: TradeSignal,
+  pendingOrders?: PendingOrders,
 ): Promise<boolean> {
   const tag = `[${signal.side} ${signal.slug} @ ${signal.price.toFixed(4)}]`;
 
@@ -89,7 +106,7 @@ export async function executeSignal(
     const { tickSize, negRisk } = await getMarketInfo(signal.slug);
 
     // 2. Fetch current price + slippage guard (skipped for exits — must close)
-    const orderPrice = signal.price;
+    let orderPrice = signal.price;
     const priceRes = await fetch(
       `${config.clobApiUrl}/last-trade-price?token_id=${signal.tokenId}`,
     );
@@ -114,25 +131,42 @@ export async function executeSignal(
     }
 
     // 3. Check orderbook liquidity and cap size
-    const availableShares = await getAvailableShares(
+    const obInfo = await getOrderbookInfo(
       signal.tokenId,
       signal.side,
       orderPrice,
     );
-    const size = Math.min(signal.size, availableShares);
+    const size = Math.min(signal.size, obInfo.availableShares);
 
     if (size * orderPrice < 5) {
       log.warn(
-        `SKIP ${tag} — insufficient liquidity (${availableShares === Infinity ? "unknown" : availableShares.toFixed(0)} shares available)`,
+        `SKIP ${tag} — insufficient liquidity (${obInfo.availableShares === Infinity ? "unknown" : obInfo.availableShares.toFixed(0)} shares available)`,
       );
       return false;
     }
 
+    // 4. In maker mode, place limit order at bestBid + 1 tick (top of bid book).
+    //    This makes us a maker — we rest on the book and pay zero fees.
+    //    Cap at bestAsk - 1 tick to ensure the order doesn't cross the spread.
+    if (config.marketMaker && signal.side === "BUY") {
+      const tick = TICK_MAP[tickSize] ?? 0.01;
+      const makerPrice = Math.min(
+        obInfo.bestBid + tick,  // one tick above best bid
+        obInfo.bestAsk - tick,  // never cross the spread
+      );
+      if (makerPrice > 0 && makerPrice < 1) {
+        orderPrice = makerPrice;
+      }
+      log.info(
+        `MAKER ${tag} bid=${obInfo.bestBid} ask=${obInfo.bestAsk} → order_price=${orderPrice.toFixed(4)}`,
+      );
+    }
+
     log.info(
-      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}%`,
+      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}% mode=${config.marketMaker ? "maker" : "taker"}`,
     );
 
-    // 4. Place order via SDK
+    // 5. Place order via SDK
     const sdkSide = signal.side === "BUY" ? Side.BUY : Side.SELL;
     const resp = await client.createAndPostOrder(
       {
@@ -158,6 +192,11 @@ export async function executeSignal(
         orderId: resp.orderID,
         success: true,
       });
+
+      // Track pending notional so position cap accounts for resting orders
+      if (pendingOrders && resp.orderID && signal.side === "BUY") {
+        pendingOrders.add(resp.orderID, signal.tokenId, orderPrice, size);
+      }
 
       return true;
     } else {

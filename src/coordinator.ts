@@ -19,6 +19,7 @@ import {
   logEdge,
 } from "./edge-calculator.js";
 import { PositionTracker } from "./position-tracker.js";
+import { PendingOrders } from "./pending-orders.js";
 import { executeSignal } from "./executor.js";
 import { getUsdcBalance } from "./wallet.js";
 import { appendBuyEntry } from "./entry-logger.js";
@@ -37,6 +38,7 @@ export class Coordinator {
   private prices: PriceCache;
   private matcher: MarketMatcher;
   private positions: PositionTracker;
+  private pendingOrders: PendingOrders;
 
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
   private destroyed = false;
@@ -55,6 +57,7 @@ export class Coordinator {
     prices: PriceCache,
     matcher: MarketMatcher,
     positions: PositionTracker,
+    pendingOrders: PendingOrders,
     initialBankroll: number,
   ) {
     this.client = client;
@@ -62,6 +65,7 @@ export class Coordinator {
     this.prices = prices;
     this.matcher = matcher;
     this.positions = positions;
+    this.pendingOrders = pendingOrders;
     this._bankroll = initialBankroll;
   }
 
@@ -200,14 +204,24 @@ export class Coordinator {
         priceAge > config.staleCacheThresholdMs ||
         lineAge > config.staleCacheThresholdMs;
 
-      // Compute edge — position cap is per-market (both YES + NO tokens)
+      // Compute edge — position cap is per-market (both YES + NO tokens).
+      // Include pending (unfilled) order notional to avoid over-sizing.
       const yesCost = this.positions.getPositionCost(match.tokenIds.yes);
       const noCost = this.positions.getPositionCost(match.tokenIds.no);
-      const existingPosition = yesCost + noCost;
+      const yesPending = this.pendingOrders.getTokenNotional(match.tokenIds.yes);
+      const noPending = this.pendingOrders.getTokenNotional(match.tokenIds.no);
+      const existingPosition = yesCost + noCost + yesPending + noPending;
+
+      // In maker mode, use midpoint as the expected fill price (fees are 0).
+      // The executor will snap to bestBid + 1 tick for the actual order.
+      const fillPrice = config.marketMaker
+        ? (priceEntry.bestBid + priceEntry.bestAsk) / 2
+        : priceEntry.bestAsk;
+
       const result = computeEdge({
         sharpProb,
         polyPrice: priceEntry.price,
-        takerPrice: priceEntry.bestAsk, // buying → pay the ask
+        takerPrice: fillPrice, // maker: midpoint; taker: best ask
         sportKey: match.sportKey,
         bankroll: this._bankroll,
         existingPosition,
@@ -231,8 +245,10 @@ export class Coordinator {
         // Still trade, but log the warning. Could reduce sizing here in future.
       }
 
-      // Build trade signal — use ask price since we're taking
-      const size = Math.round(result.suggestedSize / priceEntry.bestAsk);
+      // Build trade signal
+      // Maker mode: price is midpoint (executor will snap to bestBid + tick)
+      // Taker mode: price is bestAsk (cross the spread)
+      const size = Math.round(result.suggestedSize / fillPrice);
       if (size < 1) return;
       const tokenSide = tokenId === match.tokenIds.yes ? "YES" : "NO";
       const signal: TradeSignal = {
@@ -240,7 +256,7 @@ export class Coordinator {
         slug: match.slug,
         side: "BUY",
         tokenSide,
-        price: priceEntry.bestAsk,
+        price: fillPrice,
         size,
         edge: result.netEdge,
         kellyFraction: result.kellyFraction,
@@ -254,7 +270,7 @@ export class Coordinator {
         tokenSide,
         match,
         line,
-        priceEntry.bestAsk,
+        fillPrice,
         sharpProb,
         result.netEdge,
         result.kellyFraction,
@@ -361,7 +377,7 @@ export class Coordinator {
     }
 
     // Fire and forget — executor handles its own error logging
-    executeSignal(this.client, signal).catch((err) =>
+    executeSignal(this.client, signal, this.pendingOrders).catch((err) =>
       log.error(`Executor dispatch error: ${err.message}`),
     );
   }
@@ -416,8 +432,11 @@ export class Coordinator {
       // 5. Prune expired matches
       this.matcher.pruneExpired();
 
+      // 6. Prune expired pending orders (GTD 5-min TTL)
+      this.pendingOrders.pruneExpired();
+
       log.info(
-        `Maintenance complete: odds=${this.odds.size} events, prices=${this.prices.size} tokens, matches=${this.matcher.size}, positions=${this.positions.size}`,
+        `Maintenance complete: odds=${this.odds.size} events, prices=${this.prices.size} tokens, matches=${this.matcher.size}, positions=${this.positions.size}, pending=${this.pendingOrders.size}`,
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

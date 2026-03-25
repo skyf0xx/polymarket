@@ -12,6 +12,7 @@ import {
   fetchPolymarketSportsMarkets,
 } from "./market-matcher.js";
 import { PositionTracker } from "./position-tracker.js";
+import { PendingOrders } from "./pending-orders.js";
 import { Coordinator } from "./coordinator.js";
 import { UserStream } from "./user-stream.js";
 import { getUsdcBalance } from "./wallet.js";
@@ -92,7 +93,7 @@ function startHealthLogging(
 async function main(): Promise<void> {
   log.info("═══════════════════════════════════════════════");
   log.info("  Edge Detection Bot — Starting Up");
-  log.info(`  DRY_RUN=${config.dryRun}`);
+  log.info(`  DRY_RUN=${config.dryRun}  MARKET_MAKER=${config.marketMaker}`);
   log.info(`  Odds API sports: ${config.oddsApiSports.join(", ")}`);
   log.info(`  Polymarket sports types: ${config.polymarketSportsTypes.join(", ")}`);
   log.info(`  Min edge: ${(config.minEdge * 100).toFixed(1)}%`);
@@ -121,7 +122,8 @@ async function main(): Promise<void> {
   const prices = new PriceCache();
   const matcher = new MarketMatcher();
   const positions = new PositionTracker();
-  const coordinator = new Coordinator(client, odds, prices, matcher, positions, bankroll);
+  const pendingOrders = new PendingOrders();
+  const coordinator = new Coordinator(client, odds, prices, matcher, positions, pendingOrders, bankroll);
 
   // 4. Fetch Polymarket sports markets from Gamma
   log.info("Fetching active sports markets from Gamma...");
@@ -149,7 +151,7 @@ async function main(): Promise<void> {
   coordinator.start();
 
   // 9. Start user stream (authenticated WS for trade confirmations)
-  const userStream = new UserStream(positions, matcher, config.credsFile);
+  const userStream = new UserStream(positions, pendingOrders, matcher, config.credsFile);
   userStream.start();
 
   // 10. Health logging

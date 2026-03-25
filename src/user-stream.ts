@@ -8,6 +8,7 @@ import { readFileSync } from "fs";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import { PositionTracker } from "./position-tracker.js";
+import { PendingOrders } from "./pending-orders.js";
 import { MarketMatcher } from "./market-matcher.js";
 
 const log = createLogger("user-stream");
@@ -46,6 +47,7 @@ export class UserStream {
 
   constructor(
     private readonly positions: PositionTracker,
+    private readonly pendingOrders: PendingOrders,
     private readonly matcher: MarketMatcher,
     credsFile: string,
   ) {
@@ -217,6 +219,9 @@ export class UserStream {
         const tokenSide = tokenId === match.tokenIds.yes ? "YES" : "NO";
         this.positions.recordBuy(tokenId, match.slug, tokenSide, price, size);
       }
+      // Clear all pending orders for this token — the filled notional is now
+      // tracked as a real position. The next edge check will re-evaluate.
+      this.pendingOrders.removeByToken(tokenId);
     } else {
       this.positions.recordSell(tokenId, price, size);
     }
