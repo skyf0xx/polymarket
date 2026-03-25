@@ -116,7 +116,7 @@ export async function executeSignal(
 
       if (signal.reason !== "exit_signal") {
         const slippagePct =
-          (Math.abs(currentPrice - signal.price) / signal.price) * 100;
+          (Math.abs(currentPrice - signal.price) / currentPrice) * 100;
         if (slippagePct > config.maxSlippagePct) {
           log.warn(
             `SKIP ${tag} — price drifted ${slippagePct.toFixed(2)}% > ${config.maxSlippagePct}%`,

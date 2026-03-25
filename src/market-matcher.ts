@@ -242,6 +242,14 @@ export class MarketMatcher {
 
     // DEBUG: if no new LLM matches, dump sample input/output for inspection
     if (totalLlmMatches === 0 && needsLlm.length > 0) {
+      const marketTypeCounts: Record<string, number> = {};
+      for (const pm of needsLlm) {
+        // Infer market type from slug
+        const typeMatch = pm.slug.match(/(spread|h2h|moneyline|ml|total)/);
+        const type = typeMatch?.[1] ?? "unknown";
+        marketTypeCounts[type] = (marketTypeCounts[type] ?? 0) + 1;
+      }
+
       const debugPayload = {
         ts: new Date().toISOString(),
         oddsEventsSample: oddsEvents.slice(0, 5),
@@ -250,7 +258,12 @@ export class MarketMatcher {
       import("fs").then(({ writeFileSync }) => {
         writeFileSync("data/debug-matcher.json", JSON.stringify(debugPayload, null, 2));
       });
-      log.warn("No LLM matches — debug sample written to data/debug-matcher.json");
+      const typeSummary = Object.entries(marketTypeCounts)
+        .map(([type, count]) => `${count}x ${type}`)
+        .join(", ");
+      log.warn(
+        `⚠ No LLM matches for ${needsLlm.length} market(s) [${typeSummary}] — debug sample: data/debug-matcher.json (${oddsEvents.length} odds events available)`,
+      );
     }
 
     return { newMatches: newCount, total: this.table.size };

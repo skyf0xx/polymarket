@@ -120,11 +120,18 @@ export class TeamKnowledge {
     if (!this.h2hCache[league]) this.h2hCache[league] = {};
 
     const existing = this.h2hCache[league][matchupKey];
-    if (existing?.Yes === entry.outcomeMap.Yes && existing?.No === entry.outcomeMap.No) return;
+    // Normalize case for comparison to avoid duplicates
+    const newYes = entry.outcomeMap.Yes.trim();
+    const newNo = entry.outcomeMap.No.trim();
 
-    this.h2hCache[league][matchupKey] = { Yes: entry.outcomeMap.Yes, No: entry.outcomeMap.No };
+    if (existing && existing.Yes === newYes && existing.No === newNo) {
+      log.debug(`h2h outcomeMap already cached: ${league}/${matchupKey}`);
+      return;
+    }
+
+    this.h2hCache[league][matchupKey] = { Yes: newYes, No: newNo };
     this.saveToDisk();
-    log.info(`Learned h2h outcomeMap: ${league}/${matchupKey} → Yes=${entry.outcomeMap.Yes}`);
+    log.info(`✓ Learned h2h outcomeMap: ${league}/${matchupKey} → Yes=${newYes}, No=${newNo}`);
   }
 
   /**
