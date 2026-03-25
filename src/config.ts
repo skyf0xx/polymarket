@@ -79,6 +79,7 @@ export const config = {
   kellyFraction: envNum("KELLY_FRACTION", 0.25),
   maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
   maxPositionPct: envNum("MAX_POSITION_PCT", 0.10),
+  maxEventPct: envNum("MAX_EVENT_PCT", 0.15),
 
   // Timing
   maxSlippagePct: envNum("MAX_SLIPPAGE_PCT", 5),
