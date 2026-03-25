@@ -135,9 +135,8 @@ async function main(): Promise<void> {
   await odds.start();
 
   // 6. Hydrate team knowledge from Gamma Teams API
-  const leagues = [...new Set([...odds.getAllLines().values()].map((l) => l.leagueSlug))];
-  log.info(`Hydrating team knowledge for leagues: [${leagues.join(", ")}]`);
-  await matcher.hydrateTeams(leagues);
+  log.info(`Hydrating team knowledge for leagues: [${config.gammaLeagues.join(", ")}]`);
+  await matcher.hydrateTeams(config.gammaLeagues);
 
   // 7. Run initial match cycle
   log.info("Running initial market match cycle...");

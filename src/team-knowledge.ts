@@ -67,41 +67,43 @@ export class TeamKnowledge {
       return;
     }
 
-    const params = leagues.map((l) => `league=${encodeURIComponent(l)}`).join("&");
-    const url = `${config.gammaApiUrl}/teams?${params}`;
+    // Fetch each league individually — the combined query caps at 100 results
+    let totalFetched = 0;
+    for (const league of leagues) {
+      const url = `${config.gammaApiUrl}/teams?league=${encodeURIComponent(league)}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          log.warn(`Gamma Teams API error for ${league}: ${res.status}`);
+          continue;
+        }
 
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        log.error(`Gamma Teams API error: ${res.status}`);
-        return;
-      }
+        const teams: GammaTeam[] = await res.json();
+        if (teams.length === 0) continue;
 
-      const teams: GammaTeam[] = await res.json();
-      if (teams.length === 0) {
-        log.warn("Gamma Teams API returned empty response — keeping existing abbreviations");
-        return;
-      }
-
-      // Merge into existing abbreviations (preserves teams from prior sessions
-      // whose leagues may not be in this hydration batch)
-      for (const team of teams) {
-        const league = team.league.toLowerCase();
-        const abbr = team.abbreviation.toLowerCase();
         if (!this.abbreviations[league]) this.abbreviations[league] = {};
-        this.abbreviations[league][abbr] = team.name;
+        for (const team of teams) {
+          const abbr = team.abbreviation.toLowerCase();
+          this.abbreviations[league][abbr] = team.name;
+        }
+        totalFetched += teams.length;
+      } catch (err: unknown) {
+        log.warn(
+          `Failed to fetch teams for ${league}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-
-      this.saveToDisk();
-      const s = this.stats;
-      log.info(
-        `Team knowledge hydrated: ${s.abbreviations} abbreviations across ${s.leagues.length} leagues`,
-      );
-    } catch (err: unknown) {
-      log.error(
-        `Failed to hydrate team knowledge: ${err instanceof Error ? err.message : String(err)}`,
-      );
     }
+
+    if (totalFetched === 0) {
+      log.warn("Gamma Teams API returned no teams for any league — keeping existing abbreviations");
+      return;
+    }
+
+    this.saveToDisk();
+    const s = this.stats;
+    log.info(
+      `Team knowledge hydrated: ${s.abbreviations} abbreviations across ${s.leagues.length} leagues (fetched ${totalFetched} this cycle)`,
+    );
   }
 
   /**
@@ -151,9 +153,11 @@ export class TeamKnowledge {
     if (parsed.marketType === "spreads" && !parsed.side) return null;
 
     // Search all league-level buckets that match the slug's generic sport.
+    // Abbreviations are keyed by Gamma league codes (e.g. "nba") while
+    // oddsEvents carry Odds API slugs (e.g. "usa-nba"), so use suffix match.
     const leagueKeys = Object.keys(this.abbreviations).filter((key) => {
       return key === parsed.sport || oddsEvents.some(
-        (e) => e.league === key && e.sport === parsed.sport,
+        (e) => (e.league === key || e.league.endsWith(`-${key}`)) && e.sport === parsed.sport,
       );
     });
 

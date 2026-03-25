@@ -93,6 +93,16 @@ export const config = {
   dataDir: env("DATA_DIR", "./data"),
   credsFile: env("CREDS_FILE", "./api_creds.json"),
 
+  // Gamma Teams API — league codes for team abbreviation hydration
+  // These are Polymarket/Gamma league slugs, NOT Odds API slugs
+  gammaLeagues: envList("GAMMA_LEAGUES", [
+    "nba", "cbb", "wnba",   // basketball
+    "nfl", "cfb",            // american football
+    "mlb",                   // baseball
+    "atp", "wta",            // tennis
+    "epl",                   // premier league
+  ]),
+
   // Anthropic (for market matching)
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   matcherModel: env("MATCHER_MODEL", "claude-haiku-4-5-20251001"),
