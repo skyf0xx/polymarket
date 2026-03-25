@@ -134,7 +134,12 @@ async function main(): Promise<void> {
   log.info("Starting odds stream...");
   await odds.start();
 
-  // 6. Run initial match cycle
+  // 6. Hydrate team knowledge from Gamma Teams API
+  const leagues = [...new Set([...odds.getAllLines().values()].map((l) => l.leagueSlug))];
+  log.info(`Hydrating team knowledge for leagues: [${leagues.join(", ")}]`);
+  await matcher.hydrateTeams(leagues);
+
+  // 7. Run initial match cycle
   log.info("Running initial market match cycle...");
   const { newMatches, total } = await matcher.runMatchCycle(
     odds.getAllLines(),
@@ -142,19 +147,19 @@ async function main(): Promise<void> {
   );
   log.info(`Initial matching: ${newMatches} new, ${total} total matches`);
 
-  // 7. Start price cache with matched token IDs
+  // 8. Start price cache with matched token IDs
   const tokenIds = matcher.getAllTokenIds();
   log.info(`Starting price cache for ${tokenIds.length} token(s)...`);
   await prices.start(tokenIds);
 
-  // 8. Start coordinator (wires event listeners + maintenance timer)
+  // 9. Start coordinator (wires event listeners + maintenance timer)
   coordinator.start();
 
-  // 9. Start user stream (authenticated WS for trade confirmations)
+  // 10. Start user stream (authenticated WS for trade confirmations)
   const userStream = new UserStream(positions, pendingOrders, matcher, config.credsFile);
   userStream.start();
 
-  // 10. Health logging
+  // 11. Health logging
   const healthTimer = startHealthLogging(odds, prices, matcher, positions, coordinator);
 
   log.info("═══════════════════════════════════════════════");

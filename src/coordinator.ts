@@ -407,7 +407,11 @@ export class Coordinator {
         `Fetched ${polymarkets.length} active sports markets from Gamma`,
       );
 
-      // 2. Run matcher on new/unmatched markets
+      // 2. Re-hydrate team knowledge (picks up new leagues / team changes)
+      const leagues = [...new Set([...this.odds.getAllLines().values()].map((l) => l.leagueSlug))];
+      await this.matcher.hydrateTeams(leagues);
+
+      // 3. Run matcher on new/unmatched markets
       const { newMatches, total } = await this.matcher.runMatchCycle(
         this.odds.getAllLines(),
         polymarkets,

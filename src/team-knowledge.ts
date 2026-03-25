@@ -1,7 +1,7 @@
 // src/team-knowledge.ts
-// Persistent team knowledge base — survives across sessions.
-// Accumulates abbreviation and nickname mappings from successful LLM matches,
-// enabling deterministic matching for markets involving previously-seen teams.
+// Team abbreviation lookups and h2h outcomeMap cache persisted to disk.
+// Abbreviations are merged from the Gamma Teams API on each hydration,
+// accumulating across restarts so deterministic matching works immediately.
 
 import {
   readFileSync,
@@ -18,9 +18,17 @@ import type { MatchEntry, PolymarketMarket, MarketType } from "./types.js";
 const log = createLogger("team-knowledge");
 const KNOWLEDGE_FILE = join(config.dataDir, "team-knowledge.json");
 
-interface KnowledgeData {
-  abbreviations: Record<string, Record<string, string>>; // sport → { "okc" → "Oklahoma City Thunder" }
-  nicknames: Record<string, Record<string, string>>; // sport → { "Thunder" → "Oklahoma City Thunder" }
+// Cached h2h outcome mappings: league → "away_abbr:home_abbr" → { Yes: team, No: team }
+interface H2hCache {
+  [league: string]: {
+    [matchupKey: string]: { Yes: string; No: string };
+  };
+}
+
+// On-disk shape: both abbreviations and h2h cache persisted together
+interface KnowledgeFile {
+  abbreviations: Record<string, Record<string, string>>;
+  h2hCache: H2hCache;
 }
 
 export interface ParsedSlug {
@@ -33,40 +41,88 @@ export interface ParsedSlug {
   point?: number;
 }
 
+interface GammaTeam {
+  name: string; // e.g. "Rockets", "Thunder"
+  league: string; // e.g. "nba", "epl"
+  abbreviation: string; // e.g. "hou", "okc"
+}
+
 export class TeamKnowledge {
-  private data: KnowledgeData = { abbreviations: {}, nicknames: {} };
+  // league → { abbreviation → team name } — populated from Gamma Teams API
+  private abbreviations: Record<string, Record<string, string>> = {};
+  // league → { "away_abbr:home_abbr" → outcomeMap } — learned from LLM, persisted to disk
+  private h2hCache: H2hCache = {};
 
   constructor() {
-    this.load();
+    this.loadFromDisk();
   }
 
   /**
-   * Extract and persist team knowledge from a successful LLM match.
-   * Call this after every validated LLM match entry.
+   * Fetch team abbreviations from the Gamma Teams API for the given leagues.
+   * Call once at startup before running match cycles.
    */
-  learn(entry: MatchEntry, pm: PolymarketMarket): void {
-    const parsed = parseSlug(entry.slug);
-    // Use league slug (e.g. "nba", "ncaab") for granular keying; fall back to sportKey
-    const league = entry.leagueSlug || entry.sportKey;
-    if (!league) return;
-    let changed = false;
-
-    // Abbreviation learning: team1 in slug = away, team2 = home (Polymarket convention)
-    if (parsed) {
-      changed = this.setAbbr(league, parsed.team1, entry.awayTeam) || changed;
-      changed = this.setAbbr(league, parsed.team2, entry.homeTeam) || changed;
+  async hydrate(leagues: string[]): Promise<void> {
+    if (leagues.length === 0) {
+      log.warn("No leagues provided for team hydration");
+      return;
     }
 
-    // Nickname learning: if an outcome string isn't a full team name, learn the mapping
-    for (const outcome of pm.outcomes ?? []) {
-      for (const fullName of [entry.outcomeMap.Yes, entry.outcomeMap.No]) {
-        if (isNicknameOf(outcome, fullName)) {
-          changed = this.setNickname(league, outcome, fullName) || changed;
-        }
+    const params = leagues.map((l) => `league=${encodeURIComponent(l)}`).join("&");
+    const url = `${config.gammaApiUrl}/teams?${params}`;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        log.error(`Gamma Teams API error: ${res.status}`);
+        return;
       }
-    }
 
-    if (changed) this.save();
+      const teams: GammaTeam[] = await res.json();
+      if (teams.length === 0) {
+        log.warn("Gamma Teams API returned empty response — keeping existing abbreviations");
+        return;
+      }
+
+      // Merge into existing abbreviations (preserves teams from prior sessions
+      // whose leagues may not be in this hydration batch)
+      for (const team of teams) {
+        const league = team.league.toLowerCase();
+        const abbr = team.abbreviation.toLowerCase();
+        if (!this.abbreviations[league]) this.abbreviations[league] = {};
+        this.abbreviations[league][abbr] = team.name;
+      }
+
+      this.saveToDisk();
+      const s = this.stats;
+      log.info(
+        `Team knowledge hydrated: ${s.abbreviations} abbreviations across ${s.leagues.length} leagues`,
+      );
+    } catch (err: unknown) {
+      log.error(
+        `Failed to hydrate team knowledge: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Cache an h2h outcomeMap from a successful LLM match.
+   */
+  learn(entry: MatchEntry): void {
+    if (entry.marketType !== "h2h") return;
+
+    const parsed = parseSlug(entry.slug);
+    const league = entry.leagueSlug || entry.sportKey;
+    if (!parsed || !league) return;
+
+    const matchupKey = `${parsed.team1.toLowerCase()}:${parsed.team2.toLowerCase()}`;
+    if (!this.h2hCache[league]) this.h2hCache[league] = {};
+
+    const existing = this.h2hCache[league][matchupKey];
+    if (existing?.Yes === entry.outcomeMap.Yes && existing?.No === entry.outcomeMap.No) return;
+
+    this.h2hCache[league][matchupKey] = { Yes: entry.outcomeMap.Yes, No: entry.outcomeMap.No };
+    this.saveToDisk();
+    log.info(`Learned h2h outcomeMap: ${league}/${matchupKey} → Yes=${entry.outcomeMap.Yes}`);
   }
 
   /**
@@ -74,8 +130,8 @@ export class TeamKnowledge {
    * Returns a partial MatchEntry (commence=0 and active=false, caller must fill)
    * or null if deterministic matching is not possible.
    *
-   * Handles totals and spreads only — h2h outcomeMap cannot be inferred from
-   * the slug alone without risking Yes/No inversion.
+   * For totals/spreads: outcomeMap is derived from the slug.
+   * For h2h: outcomeMap is looked up from the disk cache (learned from prior LLM matches).
    */
   tryMatch(
     pm: PolymarketMarket,
@@ -92,22 +148,17 @@ export class TeamKnowledge {
     const parsed = parseSlug(pm.slug);
     if (!parsed) return null;
 
-    // Only handle market types where outcomeMap is unambiguous from the slug
-    if (parsed.marketType === "h2h") return null;
     if (parsed.marketType === "spreads" && !parsed.side) return null;
 
     // Search all league-level buckets that match the slug's generic sport.
-    // e.g. slug sport "basketball" checks abbreviations under "nba", "ncaab", etc.
-    const leagueKeys = Object.keys(this.data.abbreviations).filter((key) => {
-      // Match if the league key's events share the same generic sport
-      // We also accept exact match for backwards compat with old sportKey-keyed data
+    const leagueKeys = Object.keys(this.abbreviations).filter((key) => {
       return key === parsed.sport || oddsEvents.some(
         (e) => e.league === key && e.sport === parsed.sport,
       );
     });
 
     for (const league of leagueKeys) {
-      const sportAbbrs = this.data.abbreviations[league] ?? {};
+      const sportAbbrs = this.abbreviations[league] ?? {};
       const awayFull = sportAbbrs[parsed.team1.toLowerCase()];
       const homeFull = sportAbbrs[parsed.team2.toLowerCase()];
       if (!awayFull || !homeFull) continue;
@@ -124,7 +175,17 @@ export class TeamKnowledge {
       });
       if (!event) continue;
 
-      const outcomeMap = buildOutcomeMap(parsed, awayFull, homeFull);
+      // For h2h: need cached outcomeMap from a prior LLM match
+      let outcomeMap: { Yes: string; No: string };
+      if (parsed.marketType === "h2h") {
+        const matchupKey = `${parsed.team1.toLowerCase()}:${parsed.team2.toLowerCase()}`;
+        const cached = this.h2hCache[league]?.[matchupKey];
+        if (!cached) continue; // no cached h2h data — needs LLM
+        outcomeMap = cached;
+      } else {
+        outcomeMap = buildOutcomeMap(parsed, awayFull, homeFull);
+      }
+
       const outcomes = pm.outcomes ?? [];
       const { yesIdx, noIdx } = resolveIndices(outcomes, outcomeMap);
       if (yesIdx === -1 || noIdx === -1) continue;
@@ -151,69 +212,56 @@ export class TeamKnowledge {
     return null;
   }
 
-  /** Full team name for a short nickname, or null if not known. */
-  lookupNickname(sport: string, nickname: string): string | null {
-    return this.data.nicknames[sport]?.[nickname] ?? null;
-  }
-
-  get stats(): { abbreviations: number; nicknames: number; sports: string[] } {
+  get stats(): { abbreviations: number; h2hCached: number; leagues: string[] } {
     let abbreviations = 0;
-    let nicknames = 0;
-    for (const sport of Object.keys(this.data.abbreviations)) {
-      abbreviations += Object.keys(this.data.abbreviations[sport]).length;
+    let h2hCached = 0;
+    for (const league of Object.keys(this.abbreviations)) {
+      abbreviations += Object.keys(this.abbreviations[league]).length;
     }
-    for (const sport of Object.keys(this.data.nicknames)) {
-      nicknames += Object.keys(this.data.nicknames[sport]).length;
+    for (const league of Object.keys(this.h2hCache)) {
+      h2hCached += Object.keys(this.h2hCache[league]).length;
     }
     return {
       abbreviations,
-      nicknames,
-      sports: Array.from(
-        new Set([
-          ...Object.keys(this.data.abbreviations),
-          ...Object.keys(this.data.nicknames),
-        ]),
-      ),
+      h2hCached,
+      leagues: Object.keys(this.abbreviations),
     };
   }
 
-  // ── Private ────────────────────────────────────────────────────
+  // ── Disk persistence (abbreviations + h2h cache) ────────────────
 
-  private setAbbr(sport: string, abbr: string, fullName: string): boolean {
-    const key = abbr.toLowerCase();
-    if (!this.data.abbreviations[sport]) this.data.abbreviations[sport] = {};
-    if (this.data.abbreviations[sport][key] === fullName) return false;
-    this.data.abbreviations[sport][key] = fullName;
-    return true;
-  }
-
-  private setNickname(sport: string, nickname: string, fullName: string): boolean {
-    if (!this.data.nicknames[sport]) this.data.nicknames[sport] = {};
-    if (this.data.nicknames[sport][nickname] === fullName) return false;
-    this.data.nicknames[sport][nickname] = fullName;
-    return true;
-  }
-
-  private load(): void {
+  private loadFromDisk(): void {
     if (!existsSync(KNOWLEDGE_FILE)) return;
     try {
-      this.data = JSON.parse(readFileSync(KNOWLEDGE_FILE, "utf-8"));
-      const s = this.stats;
-      log.info(
-        `Team knowledge: ${s.abbreviations} abbrs, ${s.nicknames} nicknames across ${s.sports.length} sports`,
-      );
+      const raw: KnowledgeFile = JSON.parse(readFileSync(KNOWLEDGE_FILE, "utf-8"));
+      this.abbreviations = raw.abbreviations;
+      this.h2hCache = raw.h2hCache;
+
+      let h2hCount = 0;
+      for (const league of Object.keys(this.h2hCache)) {
+        h2hCount += Object.keys(this.h2hCache[league]).length;
+      }
+      let abbrCount = 0;
+      for (const league of Object.keys(this.abbreviations)) {
+        abbrCount += Object.keys(this.abbreviations[league]).length;
+      }
+      log.info(`Loaded from disk: ${abbrCount} abbreviations, ${h2hCount} h2h outcomeMap(s)`);
     } catch (err: unknown) {
       log.warn(
-        `Could not load team knowledge: ${err instanceof Error ? err.message : String(err)}`,
+        `Could not load knowledge file: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
 
-  private save(): void {
+  private saveToDisk(): void {
     if (!existsSync(config.dataDir))
       mkdirSync(config.dataDir, { recursive: true });
     const tmp = KNOWLEDGE_FILE + ".tmp";
-    writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+    const data: KnowledgeFile = {
+      abbreviations: this.abbreviations,
+      h2hCache: this.h2hCache,
+    };
+    writeFileSync(tmp, JSON.stringify(data, null, 2));
     renameSync(tmp, KNOWLEDGE_FILE);
   }
 }
@@ -328,14 +376,6 @@ function buildOutcomeMap(
   // spreads: side is guaranteed non-null by tryMatch guard above
   if (parsed.side === "home") return { Yes: homeFull, No: awayFull };
   return { Yes: awayFull, No: homeFull }; // side === "away" (default)
-}
-
-/** True if `outcome` is a short-form nickname of `fullName`. */
-function isNicknameOf(outcome: string, fullName: string): boolean {
-  const o = outcome.toLowerCase();
-  const f = fullName.toLowerCase();
-  // Must be a substring match, and must NOT be identical (not a nickname then)
-  return o !== f && (f.includes(o) || o.includes(f));
 }
 
 function looseNameMatch(a: string, b: string): boolean {
