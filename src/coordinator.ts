@@ -212,6 +212,9 @@ export class Coordinator {
       const noPending = this.pendingOrders.getTokenNotional(match.tokenIds.no);
       const existingPosition = yesCost + noCost + yesPending + noPending;
 
+      // Event-level exposure: sum positions across all markets for this event
+      const existingEventExposure = this.computeEventExposure(match.oddsApiEventId);
+
       // In maker mode, use midpoint as the expected fill price (fees are 0).
       // The executor will snap to bestBid + 1 tick for the actual order.
       const fillPrice = config.marketMaker
@@ -225,6 +228,7 @@ export class Coordinator {
         sportKey: match.sportKey,
         bankroll: this._bankroll,
         existingPosition,
+        existingEventExposure,
       });
 
       // Always log the edge check (persisted for dry-run analysis)
@@ -455,6 +459,21 @@ export class Coordinator {
    */
   private findMatchByToken(tokenId: string): MatchEntry | null {
     return this.matcher.getMatchByToken(tokenId);
+  }
+
+  /**
+   * Sum position cost + pending notional across all markets for one event.
+   */
+  private computeEventExposure(eventId: string): number {
+    const siblings = this.matcher.getMatchesByEvent(eventId);
+    let total = 0;
+    for (const m of siblings) {
+      total += this.positions.getPositionCost(m.tokenIds.yes);
+      total += this.positions.getPositionCost(m.tokenIds.no);
+      total += this.pendingOrders.getTokenNotional(m.tokenIds.yes);
+      total += this.pendingOrders.getTokenNotional(m.tokenIds.no);
+    }
+    return total;
   }
 
   /**

@@ -52,6 +52,7 @@ export interface ComputeEdgeInput {
   sportKey: string; // for fee lookup
   bankroll: number; // total USDC bankroll
   existingPosition: number; // USDC already in this market
+  existingEventExposure: number; // USDC across all markets for this event
 }
 
 /**
@@ -59,7 +60,7 @@ export interface ComputeEdgeInput {
  * Returns null if the edge is not tradeable.
  */
 export function computeEdge(input: ComputeEdgeInput): EdgeResult {
-  const { sharpProb, takerPrice, sportKey, bankroll, existingPosition } = input;
+  const { sharpProb, takerPrice, sportKey, bankroll, existingPosition, existingEventExposure } = input;
 
   // 1. Gross edge — use taker price (ask when buying) for realistic fill
   const grossEdge = sharpProb - takerPrice;
@@ -100,9 +101,15 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
   // 7. Suggested size in USDC
   let suggestedSize = bankroll * adjustedKelly;
 
-  // 8. Position cap: max 10% of bankroll per market
+  // 8. Position cap: max % of bankroll per market
   const maxPosition = bankroll * config.maxPositionPct;
-  const remainingRoom = Math.max(0, maxPosition - existingPosition);
+  const remainingMarketRoom = Math.max(0, maxPosition - existingPosition);
+
+  // 8b. Event cap: max % of bankroll across all markets for the same event
+  const maxEvent = bankroll * config.maxEventPct;
+  const remainingEventRoom = Math.max(0, maxEvent - existingEventExposure);
+
+  const remainingRoom = Math.min(remainingMarketRoom, remainingEventRoom);
   suggestedSize = Math.min(suggestedSize, remainingRoom);
 
   // 9. Minimum viable bet ($5)
@@ -114,7 +121,12 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
       kellyFraction,
       suggestedSize: 0,
       tradeable: false,
-      skipReason: remainingRoom < 5 ? "position_cap_reached" : "bet_too_small",
+      skipReason:
+        remainingEventRoom < 5
+          ? "event_cap_reached"
+          : remainingMarketRoom < 5
+            ? "position_cap_reached"
+            : "bet_too_small",
     };
   }
 
