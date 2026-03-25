@@ -5,7 +5,7 @@
       "cha": "Charlotte Hornets",
       "nop": "New Orleans Pelicans",
       "nyk": "New York Knicks",
-      "den": "Denver Nuggets",
+      "den": "Phoenix Suns",
       "phx": "Phoenix Suns",
       "orl": "Orlando Magic",
       "cle": "Cleveland Cavaliers",
@@ -20,7 +20,12 @@
       "ark": "Arkansas Razorbacks",
       "arz": "Arizona Wildcats",
       "ill": "Illinois Fighting Illini",
-      "mia": "Orlando Magic"
+      "mia": "Orlando Magic",
+      "atl": "Denver Nuggets",
+      "det": "Phoenix Suns",
+      "tor": "Houston Rockets",
+      "lac": "Minnesota Timberwolves",
+      "dal": "Denver Nuggets"
     },
     "football": {
       "ein": "1. FC Cologne",
