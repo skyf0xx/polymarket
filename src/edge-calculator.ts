@@ -19,7 +19,9 @@ const log = createLogger("edge");
 const FEE_RATE = 0.03;
 
 // Per-share fee: feeRate × p × (p × (1 - p))^1 = feeRate × p² × (1 - p)
+// Makers pay zero fees on Polymarket, so return 0 when MARKET_MAKER is enabled.
 function estimateFee(price: number, _sportKey?: string): number {
+  if (config.marketMaker) return 0;
   return FEE_RATE * price * price * (1 - price);
 }
 
