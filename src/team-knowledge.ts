@@ -355,18 +355,32 @@ export function resolveIndices(
     yesIdx = outcomes.findIndex(
       (o) =>
         outcomeMap.Yes.toLowerCase().includes(o.toLowerCase()) ||
-        o.toLowerCase().includes(outcomeMap.Yes.toLowerCase()),
+        o.toLowerCase().includes(outcomeMap.Yes.toLowerCase()) ||
+        namesMatch(o, outcomeMap.Yes),
     );
   }
   if (noIdx === -1) {
     noIdx = outcomes.findIndex(
       (o) =>
         outcomeMap.No.toLowerCase().includes(o.toLowerCase()) ||
-        o.toLowerCase().includes(outcomeMap.No.toLowerCase()),
+        o.toLowerCase().includes(outcomeMap.No.toLowerCase()) ||
+        namesMatch(o, outcomeMap.No),
     );
   }
 
   return { yesIdx, noIdx };
+}
+
+/** Fuzzy match names: handles "First Last" vs "Last, First" reordering. */
+function namesMatch(outcome: string, mapped: string): boolean {
+  const outcomeParts = outcome.split(/\s+/).map((p) => p.toLowerCase());
+  const mappedParts = mapped.split(/[,\s]+/).map((p) => p.toLowerCase());
+
+  // Check if all parts of one name appear in the other (order-agnostic)
+  const shorter = outcomeParts.length <= mappedParts.length ? outcomeParts : mappedParts;
+  const longer = outcomeParts.length <= mappedParts.length ? mappedParts : outcomeParts;
+
+  return shorter.every((part) => longer.includes(part)) && shorter.length >= 2;
 }
 
 // ── Internal helpers ───────────────────────────────────────────────

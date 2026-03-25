@@ -196,18 +196,25 @@ export class MarketMatcher {
         totalLlmMatches += matches.length;
 
         for (const match of matches) {
-          // Validate: slug date matches odds event date; also set commence from the odds line
+          // Validate: slug date matches odds event date (±1 day for UTC rollover); also set commence from the odds line
           const oddsLine = oddsLines.get(match.oddsApiEventId);
           if (oddsLine) {
             const slugDate = match.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
             const oddsDate = new Date(oddsLine.commence).toISOString().slice(0, 10);
             if (!slugDate) {
               log.warn(`No date found in slug ${match.slug}, skipping date validation`);
-            } else if (slugDate !== oddsDate) {
-              log.warn(
-                `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (slug=${slugDate}, odds=${oddsDate})`,
-              );
-              continue;
+            } else {
+              // Allow ±1 day drift: games tipping late in local evening (10pm+) roll into next calendar day in UTC.
+              // E.g., a game on March 25 at 10:30pm ET is March 26 in UTC, so slug=2026-03-25 matches odds=2026-03-26.
+              const slugMs = new Date(slugDate).getTime();
+              const oddsMs = new Date(oddsDate).getTime();
+              const dayDiff = Math.abs(slugMs - oddsMs) / (24 * 60 * 60 * 1000);
+              if (dayDiff > 1) {
+                log.warn(
+                  `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (slug=${slugDate}, odds=${oddsDate}, diff=${dayDiff.toFixed(1)}d)`,
+                );
+                continue;
+              }
             }
             match.commence = oddsLine.commence;
           }
@@ -232,6 +239,19 @@ export class MarketMatcher {
     log.info(
       `LLM returned ${totalLlmMatches} match(es), ${newCount} total validated`,
     );
+
+    // DEBUG: if no new LLM matches, dump sample input/output for inspection
+    if (totalLlmMatches === 0 && needsLlm.length > 0) {
+      const debugPayload = {
+        ts: new Date().toISOString(),
+        oddsEventsSample: oddsEvents.slice(0, 5),
+        polymarketsSample: needsLlm.slice(0, 5),
+      };
+      import("fs").then(({ writeFileSync }) => {
+        writeFileSync("data/debug-matcher.json", JSON.stringify(debugPayload, null, 2));
+      });
+      log.warn("No LLM matches — debug sample written to data/debug-matcher.json");
+    }
 
     return { newMatches: newCount, total: this.table.size };
   }
