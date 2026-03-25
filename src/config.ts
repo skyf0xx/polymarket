@@ -59,6 +59,7 @@ export const config = {
   oddsApiRestUrl: env("ODDS_API_REST_URL", "https://api.odds-api.io"),
   bookmakerId: env("BOOKMAKER_ID", ""),
   oddsApiSports: envList("ODDS_API_SPORTS", []),
+  oddsApiLeagues: envList("ODDS_API_LEAGUES", []),
 
   // Polymarket
   polymarketSportsTypes: envList("POLYMARKET_SPORTS_TYPES", ["moneyline", "spreads", "totals"]),

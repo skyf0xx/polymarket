@@ -165,11 +165,13 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     if (this.destroyed) return;
 
     const sports = config.oddsApiSports.join(",");
+    const leagues = config.oddsApiLeagues.join(",");
     const url =
       `${config.oddsApiWsUrl}` +
       `?apiKey=${config.oddsApiKey}` +
       `&markets=ML,Spread,Totals` +
-      `&sport=${sports}`; //TODO: Also filter by league?
+      `&sport=${sports}` +
+      (leagues ? `&leagues=${leagues}` : "");
 
     log.info(`Connecting Odds API WS: sports=${sports}`);
 
