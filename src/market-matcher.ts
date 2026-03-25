@@ -28,9 +28,13 @@ export class MarketMatcher {
   private table = new Map<string, MatchEntry>();
   private tokenIndex = new Map<string, MatchEntry>(); // tokenId → MatchEntry
   private knowledge = new TeamKnowledge();
-
   constructor() {
     this.loadFromDisk();
+  }
+
+  /** Hydrate team knowledge from the Gamma Teams API. Call before runMatchCycle. */
+  async hydrateTeams(leagues: string[]): Promise<void> {
+    await this.knowledge.hydrate(leagues);
   }
 
   // ── Public API ──────────────────────────────────────────────────
@@ -206,8 +210,7 @@ export class MarketMatcher {
           const pmFull = polymarkets.find((p) => p.slug === match.slug);
           if (pmFull) {
             match.active = pmFull.active;
-            // Teach the knowledge base from this successful LLM match
-            this.knowledge.learn(match, pmFull);
+            this.knowledge.learn(match);
           }
 
           this.table.set(match.slug, match);
@@ -500,15 +503,17 @@ Rules:
 
       // Derive sportKey/leagueSlug from the matched odds event — the LLM's value is unreliable
       const matchedEvent = oddsEvents.find((e) => e.id === r.oddsApiEventId);
-      const sportKey = matchedEvent?.sport ?? r.sportKey;
-      const leagueSlug = matchedEvent?.league;
+      if (!matchedEvent) {
+        log.warn(`LLM match "${r.slug}" references unknown event "${r.oddsApiEventId}", skipping`);
+        return [];
+      }
 
       return [
         {
           slug: r.slug,
           oddsApiEventId: r.oddsApiEventId,
-          sportKey,
-          leagueSlug,
+          sportKey: matchedEvent.sport,
+          leagueSlug: matchedEvent.league,
           homeTeam: r.homeTeam,
           awayTeam: r.awayTeam,
           outcomeMap: r.outcomeMap,
