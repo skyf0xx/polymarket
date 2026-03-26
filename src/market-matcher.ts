@@ -12,7 +12,7 @@ import {
 import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import { TeamKnowledge, resolveIndices } from "./team-knowledge.js";
+import { TeamKnowledge, resolveIndices, looseNameMatch } from "./team-knowledge.js";
 import type {
   MatchEntry,
   MarketType,
@@ -185,13 +185,27 @@ export class MarketMatcher {
       );
 
       try {
-        // Pre-filter odds events to only dates present in this batch's slugs
+        // Pre-filter odds events to only those relevant to this batch.
+        // Resolve team names from slug abbreviations via team knowledge,
+        // then match odds events by team name + date proximity.
         const batchDates = new Set(
           batch.map((pm) => pm.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean),
         );
-        const filteredOddsEvents = oddsEvents.filter((e) =>
-          batchDates.has(e.time.slice(0, 10)),
-        );
+        const batchTeams: Array<{ away: string; home: string }> = [];
+        for (const pm of batch) {
+          const teams = this.knowledge.resolveTeams(pm.slug);
+          if (teams) batchTeams.push(teams);
+        }
+        const filteredOddsEvents = oddsEvents.filter((e) => {
+          if (!batchDates.has(e.time.slice(0, 10))) return false;
+          // If we resolved teams, only include events that match at least one market's teams
+          if (batchTeams.length > 0) {
+            return batchTeams.some(
+              (t) => looseNameMatch(e.home, t.home) && looseNameMatch(e.away, t.away),
+            );
+          }
+          return true; // fallback: date-only filter if no teams could be resolved
+        });
         const matches = await this.callLlmMatcher(filteredOddsEvents, batch);
         totalLlmMatches += matches.length;
 
