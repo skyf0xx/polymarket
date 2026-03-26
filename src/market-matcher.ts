@@ -320,11 +320,14 @@ export class MarketMatcher {
 
     for (const pm of polymarkets) {
       const entry = this.table.get(pm.slug);
-      if (entry && entry.active !== pm.active) {
-        entry.active = pm.active;
+      if (!entry) continue;
+      // Treat markets not accepting orders as inactive
+      const effectiveActive = pm.active && pm.acceptingOrders;
+      if (entry.active !== effectiveActive) {
+        entry.active = effectiveActive;
         changed = true;
-        if (!pm.active) {
-          log.info(`Market ${pm.slug} marked inactive (resolved/closed)`);
+        if (!effectiveActive) {
+          log.info(`Market ${pm.slug} marked inactive (active=${pm.active}, acceptingOrders=${pm.acceptingOrders})`);
         }
       }
     }
@@ -676,6 +679,7 @@ export async function fetchPolymarketSportsMarkets(): Promise<
         endDate: string;
         active: boolean;
         closed: boolean;
+        acceptingOrders?: boolean;
         groupItemTitle?: string;
         conditionId: string;
       }
@@ -706,6 +710,7 @@ export async function fetchPolymarketSportsMarkets(): Promise<
           endDate: m.endDate,
           active: m.active,
           closed: m.closed,
+          acceptingOrders: m.acceptingOrders ?? true,
           groupItemTitle: m.groupItemTitle,
           conditionId: m.conditionId,
         });
