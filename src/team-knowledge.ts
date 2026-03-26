@@ -223,6 +223,24 @@ export class TeamKnowledge {
     return null;
   }
 
+  /**
+   * Resolve slug team abbreviations to full names.
+   * Returns null if either abbreviation is unknown.
+   */
+  resolveTeams(slug: string): { away: string; home: string } | null {
+    const parsed = parseSlug(slug);
+    if (!parsed) return null;
+
+    for (const league of Object.keys(this.abbreviations)) {
+      if (league !== parsed.sport && !league.endsWith(`-${parsed.sport}`)) continue;
+      const sportAbbrs = this.abbreviations[league];
+      const away = sportAbbrs[parsed.team1.toLowerCase()];
+      const home = sportAbbrs[parsed.team2.toLowerCase()];
+      if (away && home) return { away, home };
+    }
+    return null;
+  }
+
   get stats(): { abbreviations: number; h2hCached: number; leagues: string[] } {
     let abbreviations = 0;
     let h2hCached = 0;
@@ -403,7 +421,7 @@ function buildOutcomeMap(
   return { Yes: awayFull, No: homeFull }; // side === "away" (default)
 }
 
-function looseNameMatch(a: string, b: string): boolean {
+export function looseNameMatch(a: string, b: string): boolean {
   const al = a.toLowerCase();
   const bl = b.toLowerCase();
   return al === bl || al.includes(bl) || bl.includes(al);
