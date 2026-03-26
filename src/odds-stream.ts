@@ -89,7 +89,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     }
 
     this._lastHydrateAt = Date.now();
-    log.info(`Odds cache ready: ${this.cache.size} events`);
+    let withH2h = 0;
+    for (const l of this.cache.values()) { if (l.markets.h2h) withH2h++; }
+    log.info(`Odds cache ready: ${this.cache.size} events (${withH2h} with h2h)`);
   }
 
   private async hydrateSportEvents(
@@ -426,14 +428,22 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       const name = market.name.toLowerCase();
 
       if (name === "ml") {
-        const odds = market.odds[0];
-        if (!odds) continue;
-        if (odds.home != null && odds.away != null) {
+        // Bookmakers may split home/away/draw across multiple odds entries.
+        // Merge all entries then check for both sides.
+        let mlHome: string | undefined;
+        let mlAway: string | undefined;
+        let mlDraw: string | undefined;
+        for (const o of market.odds) {
+          if (o.home != null && !mlHome) mlHome = o.home;
+          if (o.away != null && !mlAway) mlAway = o.away;
+          if (o.draw != null && !mlDraw) mlDraw = o.draw;
+        }
+        if (mlHome != null && mlAway != null) {
           line.markets.h2h = {
-            home: decimalToProb(parseFloat(odds.home)),
-            away: decimalToProb(parseFloat(odds.away)),
-            ...(odds.draw != null && {
-              draw: decimalToProb(parseFloat(odds.draw)),
+            home: decimalToProb(parseFloat(mlHome)),
+            away: decimalToProb(parseFloat(mlAway)),
+            ...(mlDraw != null && {
+              draw: decimalToProb(parseFloat(mlDraw)),
             }),
           };
         }
