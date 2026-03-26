@@ -86,7 +86,6 @@ export const config = {
   cooldownSeconds: envNum("COOLDOWN_SECONDS", 30),
   debounceMs: envNum("DEBOUNCE_MS", 500),
   maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000), // 5 min
-  staleCacheThresholdMs: envNum("STALE_CACHE_THRESHOLD_MS", 60_000), // 60s
 
   // Operation
   verbose: envBool("VERBOSE", false),
