@@ -53,7 +53,7 @@ interface TopOfBook {
 
 async function getTopOfBook(tokenId: string): Promise<TopOfBook> {
   try {
-    const res = await fetch(`${config.clobApiUrl}/orderbook/${tokenId}`);
+    const res = await fetch(`${config.clobApiUrl}/book?token_id=${tokenId}`);
     if (!res.ok) return { bestBid: 0, bestAsk: 1 };
 
     const book = await res.json();
