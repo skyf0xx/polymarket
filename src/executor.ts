@@ -1,6 +1,6 @@
 // src/executor.ts
-// Receives a TradeSignal from the coordinator and places an order on Polymarket.
-// Supports both BUY and SELL. Checks orderbook depth before sizing.
+// Receives a TradeSignal from the coordinator and places a GTD order on Polymarket.
+// Price is locked at edge-detection time — order fills or expires in 5 minutes.
 
 import { ClobClient, OrderType, Side } from "@polymarket/clob-client";
 import type { TickSize } from "@polymarket/clob-client";
@@ -44,51 +44,28 @@ async function getMarketInfo(slug: string): Promise<MarketInfo> {
   return info;
 }
 
-// ── Orderbook Depth Check ─────────────────────────────────────────
+// ── Orderbook Best Bid/Ask (maker mode only) ────────────────────
 
-interface OrderbookResult {
-  availableShares: number;
+interface TopOfBook {
   bestBid: number;
   bestAsk: number;
 }
 
-/**
- * Fetch orderbook and return available shares on the relevant side
- * that are fillable at or better than the given limit price,
- * plus the current best bid/ask for maker pricing.
- */
-async function getOrderbookInfo(
-  tokenId: string,
-  side: "BUY" | "SELL",
-  limitPrice: number,
-): Promise<OrderbookResult> {
+async function getTopOfBook(tokenId: string): Promise<TopOfBook> {
   try {
     const res = await fetch(`${config.clobApiUrl}/orderbook/${tokenId}`);
-    if (!res.ok) return { availableShares: Infinity, bestBid: 0, bestAsk: 1 };
+    if (!res.ok) return { bestBid: 0, bestAsk: 1 };
 
     const book = await res.json();
-    const bids: Array<{ price?: string | number; size?: string | number; [index: number]: string | number }> = book.bids ?? [];
-    const asks: Array<{ price?: string | number; size?: string | number; [index: number]: string | number }> = book.asks ?? [];
-
-    const levels = side === "BUY" ? asks : bids;
-
-    let totalShares = 0;
-    for (const level of levels) {
-      const price = Number(level.price ?? level[0] ?? 0);
-      const size = Number(level.size ?? level[1] ?? 0);
-      if (side === "BUY" && price <= limitPrice) {
-        totalShares += size;
-      } else if (side === "SELL" && price >= limitPrice) {
-        totalShares += size;
-      }
-    }
+    const bids: Array<{ price?: string | number; [index: number]: string | number }> = book.bids ?? [];
+    const asks: Array<{ price?: string | number; [index: number]: string | number }> = book.asks ?? [];
 
     const bestBid = bids.length > 0 ? Number(bids[0].price ?? bids[0][0] ?? 0) : 0;
     const bestAsk = asks.length > 0 ? Number(asks[0].price ?? asks[0][0] ?? 1) : 1;
 
-    return { availableShares: totalShares, bestBid, bestAsk };
+    return { bestBid, bestAsk };
   } catch {
-    return { availableShares: Infinity, bestBid: 0, bestAsk: 1 };
+    return { bestBid: 0, bestAsk: 1 };
   }
 }
 
@@ -107,26 +84,13 @@ export async function executeSignal(
 
     // 2. Use the price from edge detection — GTD order will expire if it doesn't fill
     let orderPrice = signal.price;
+    const size = signal.size;
 
-    // 3. Check orderbook liquidity and cap size
-    const obInfo = await getOrderbookInfo(
-      signal.tokenId,
-      signal.side,
-      orderPrice,
-    );
-    const size = Math.min(signal.size, obInfo.availableShares);
-
-    if (size * orderPrice < 5) {
-      log.warn(
-        `SKIP ${tag} — insufficient liquidity (${obInfo.availableShares === Infinity ? "unknown" : obInfo.availableShares.toFixed(0)} shares available)`,
-      );
-      return false;
-    }
-
-    // 4. In maker mode, place limit order at bestBid + 1 tick (top of bid book).
+    // 3. In maker mode, place limit order at bestBid + 1 tick (top of bid book).
     //    This makes us a maker — we rest on the book and pay zero fees.
     //    Cap at bestAsk - 1 tick to ensure the order doesn't cross the spread.
     if (config.marketMaker && signal.side === "BUY") {
+      const obInfo = await getTopOfBook(signal.tokenId);
       const tick = TICK_MAP[tickSize] ?? 0.01;
       const makerPrice = Math.min(
         obInfo.bestBid + tick,  // one tick above best bid
