@@ -196,14 +196,6 @@ export class Coordinator {
       const priceEntry = this.prices.getPrice(tokenId);
       if (!priceEntry) return;
 
-      // Stale data warning
-      const now = Date.now();
-      const priceAge = now - priceEntry.updatedAt;
-      const lineAge = now - line.updatedAt;
-      const stale =
-        priceAge > config.staleCacheThresholdMs ||
-        lineAge > config.staleCacheThresholdMs;
-
       // Compute edge — position cap is per-market (both YES + NO tokens).
       // Include pending (unfilled) order notional to avoid over-sizing.
       const yesCost = this.positions.getPositionCost(match.tokenIds.yes);
@@ -240,13 +232,6 @@ export class Coordinator {
       if (isOnCooldown(tokenId)) {
         log.debug(`Cooldown active for ${tokenId}, skipping signal`);
         return;
-      }
-
-      if (stale) {
-        log.warn(
-          `Stale data for ${match.slug} (price=${priceAge}ms, line=${lineAge}ms) — reducing confidence`,
-        );
-        // Still trade, but log the warning. Could reduce sizing here in future.
       }
 
       // Build trade signal
