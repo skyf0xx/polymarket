@@ -87,10 +87,12 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
     };
   }
 
-  // 5. Kelly fraction: edge / (1 - price)
-  //    This is the Kelly formula for a binary bet where you buy at `price`
+  // 5. Kelly fraction: netEdge / (1 - effectivePrice)
+  //    effectivePrice = takerPrice + fee (what you actually pay per share).
+  //    This is the Kelly formula for a binary bet where you buy at effectivePrice
   //    and win $1 or lose your stake.
-  const kellyFraction = takerPrice < 1 ? netEdge / (1 - takerPrice) : 0;
+  const effectivePrice = takerPrice + fee;
+  const kellyFraction = effectivePrice < 1 ? netEdge / (1 - effectivePrice) : 0;
 
   // 6. Apply Kelly multiplier (quarter Kelly by default), capped at MAX_KELLY_PCT
   const adjustedKelly = Math.min(

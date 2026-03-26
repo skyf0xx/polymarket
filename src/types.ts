@@ -43,6 +43,7 @@ export interface PriceEntry {
   price: number;      // midpoint (for display / logging)
   bestBid: number;    // best bid — what you receive as a taker seller
   bestAsk: number;    // best ask — what you pay as a taker buyer
+  hasBook: boolean;   // true once a real WS book/price_change updates bid/ask
   updatedAt: number;
 }
 
@@ -115,6 +116,7 @@ export interface PolymarketMarket {
   endDate: string;
   active: boolean;
   closed: boolean;
+  acceptingOrders: boolean;
   groupItemTitle?: string; // often the team name
   conditionId: string;
 }

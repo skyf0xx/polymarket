@@ -36,7 +36,7 @@ async function getMarketInfo(slug: string): Promise<MarketInfo> {
     throw new Error(`Gamma API error for slug ${slug}: ${res.status}`);
   const market = await res.json();
 
-  const tickSize = (market.orderPriceMinTickSize ?? "0.01") as TickSize;
+  const tickSize = String(market.orderPriceMinTickSize) as TickSize;
   const negRisk = market.events?.[0]?.negRisk ?? false;
 
   const info: MarketInfo = { tickSize, negRisk };
@@ -60,8 +60,18 @@ async function getTopOfBook(tokenId: string): Promise<TopOfBook> {
     const bids: Array<{ price?: string | number; [index: number]: string | number }> = book.bids ?? [];
     const asks: Array<{ price?: string | number; [index: number]: string | number }> = book.asks ?? [];
 
-    const bestBid = bids.length > 0 ? Number(bids[0].price ?? bids[0][0] ?? 0) : 0;
-    const bestAsk = asks.length > 0 ? Number(asks[0].price ?? asks[0][0] ?? 1) : 1;
+    // Bids/asks are NOT guaranteed sorted — find best manually
+    let bestBid = 0;
+    for (const b of bids) {
+      const p = Number(b.price ?? b[0] ?? 0);
+      if (p > bestBid) bestBid = p;
+    }
+    let bestAsk = asks.length > 0 ? Infinity : 1;
+    for (const a of asks) {
+      const p = Number(a.price ?? a[0] ?? Infinity);
+      if (p < bestAsk) bestAsk = p;
+    }
+    if (bestAsk === Infinity) bestAsk = 1;
 
     return { bestBid, bestAsk };
   } catch {

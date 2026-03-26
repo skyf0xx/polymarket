@@ -23,6 +23,7 @@ import { PendingOrders } from "./pending-orders.js";
 import { executeSignal } from "./executor.js";
 import { getUsdcBalance } from "./wallet.js";
 import { appendBuyEntry } from "./entry-logger.js";
+import { looseNameMatch } from "./team-knowledge.js";
 import type {
   SharpLine,
   PriceEntry,
@@ -195,6 +196,12 @@ export class Coordinator {
       // Get current Polymarket price
       const priceEntry = this.prices.getPrice(tokenId);
       if (!priceEntry) return;
+
+      // Skip if no real book data yet (REST hydration only has last trade price)
+      if (!priceEntry.hasBook) {
+        log.debug(`Skipping ${tokenId}: no real book data yet`);
+        return;
+      }
 
       // Compute edge — position cap is per-market (both YES + NO tokens).
       // Include pending (unfilled) order notional to avoid over-sizing.
@@ -477,7 +484,9 @@ export class Coordinator {
     if (match.marketType === "h2h") {
       const h2h = marketData as { home: number; away: number; draw?: number };
       const yesTeam = match.outcomeMap.Yes;
-      const yesIsHome = yesTeam === line.homeTeam;
+      // Use loose match — Gamma uses short names ("Mavericks") while Odds API
+      // uses full names ("Dallas Mavericks")
+      const yesIsHome = looseNameMatch(yesTeam, line.homeTeam);
       if (isYesToken) {
         return yesIsHome ? h2h.home : h2h.away;
       } else {
@@ -498,7 +507,7 @@ export class Coordinator {
         );
         return null;
       }
-      const yesIsHome = match.outcomeMap.Yes === line.homeTeam;
+      const yesIsHome = looseNameMatch(match.outcomeMap.Yes, line.homeTeam);
       if (isYesToken) {
         return yesIsHome ? spreads.home : spreads.away;
       } else {

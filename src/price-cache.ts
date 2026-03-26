@@ -156,6 +156,7 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
               price,
               bestBid: price, // REST only gives last trade; WS will refine
               bestAsk: price,
+              hasBook: false,
               updatedAt: Date.now(),
             };
             this.cache.set(tokenId, entry);
@@ -270,8 +271,9 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       case "book": {
         const book = msg as WsBook;
         if (!this.subscribedTokens.has(book.asset_id)) break;
-        const bid = parseFloat(book.bids[0]?.price ?? "0");
-        const ask = parseFloat(book.asks[0]?.price ?? "0");
+        // Bids/asks are NOT guaranteed sorted by the API — find best manually
+        const bid = bestPrice(book.bids, "max");
+        const ask = bestPrice(book.asks, "min");
         if (bid > 0 || ask > 0) {
           this.updateCache(book.asset_id, bid, ask);
         }
@@ -291,6 +293,7 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       price,
       bestBid,
       bestAsk,
+      hasBook: true,
       updatedAt: Date.now(),
     };
     this.cache.set(tokenId, entry);
@@ -341,4 +344,17 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       this.connectWs();
     }, delay);
   }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+/** Find the best price from an unsorted array of book levels. */
+function bestPrice(levels: BookLevel[], side: "max" | "min"): number {
+  if (levels.length === 0) return 0;
+  let best = parseFloat(levels[0].price);
+  for (let i = 1; i < levels.length; i++) {
+    const p = parseFloat(levels[i].price);
+    if (side === "max" ? p > best : p < best) best = p;
+  }
+  return best;
 }
