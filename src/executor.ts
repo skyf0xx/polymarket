@@ -105,30 +105,8 @@ export async function executeSignal(
     // 1. Get market info (tick size + negRisk)
     const { tickSize, negRisk } = await getMarketInfo(signal.slug);
 
-    // 2. Fetch current price + slippage guard (skipped for exits — must close)
+    // 2. Use the price from edge detection — GTD order will expire if it doesn't fill
     let orderPrice = signal.price;
-    const priceRes = await fetch(
-      `${config.clobApiUrl}/last-trade-price?token_id=${signal.tokenId}`,
-    );
-    if (priceRes.ok) {
-      const priceData = await priceRes.json();
-      const currentPrice = Number(priceData?.price ?? signal.price);
-
-      if (signal.reason !== "exit_signal") {
-        const slippagePct =
-          (Math.abs(currentPrice - signal.price) / currentPrice) * 100;
-        if (slippagePct > config.maxSlippagePct) {
-          log.warn(
-            `SKIP ${tag} — price drifted ${slippagePct.toFixed(2)}% > ${config.maxSlippagePct}%`,
-          );
-          return false;
-        }
-      }
-    } else {
-      log.warn(
-        `${tag} — slippage check skipped: price endpoint returned ${priceRes.status}`,
-      );
-    }
 
     // 3. Check orderbook liquidity and cap size
     const obInfo = await getOrderbookInfo(

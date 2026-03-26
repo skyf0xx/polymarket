@@ -83,7 +83,6 @@ export const config = {
   maxEventPct: envNum("MAX_EVENT_PCT", 0.15),
 
   // Timing
-  maxSlippagePct: envNum("MAX_SLIPPAGE_PCT", 5),
   cooldownSeconds: envNum("COOLDOWN_SECONDS", 30),
   debounceMs: envNum("DEBOUNCE_MS", 500),
   maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000), // 5 min
