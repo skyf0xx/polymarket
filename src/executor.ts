@@ -97,7 +97,7 @@ export async function executeSignal(
         obInfo.bestAsk - tick,  // never cross the spread
       );
       if (makerPrice > 0 && makerPrice < 1) {
-        orderPrice = makerPrice;
+        orderPrice = Math.min(signal.price, makerPrice);
       }
       log.info(
         `MAKER ${tag} bid=${obInfo.bestBid} ask=${obInfo.bestAsk} → order_price=${orderPrice.toFixed(4)}`,
