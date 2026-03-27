@@ -422,16 +422,19 @@ export class Coordinator {
       const allTokenIds = this.matcher.getAllTokenIds();
       this.prices.addTokens(allTokenIds);
 
-      // 4. Refresh bankroll from on-chain balance
+      // 4. Re-sync positions from Data API (corrects any WS drift)
+      await this.positions.hydrate();
+
+      // 5. Refresh bankroll from on-chain balance
       const freshBalance = await getUsdcBalance();
       if (freshBalance !== null) {
         this._bankroll = freshBalance;
       }
 
-      // 5. Prune expired matches
+      // 6. Prune expired matches
       this.matcher.pruneExpired();
 
-      // 6. Prune expired pending orders (GTD 5-min TTL)
+      // 7. Prune expired pending orders (GTD 5-min TTL)
       this.pendingOrders.pruneExpired();
 
       log.info(

@@ -1,25 +1,83 @@
 // src/position-tracker.ts
 // Tracks open positions (token ID, avg price, size).
-// Persists to positions.json for crash recovery.
+// Hydrates from Polymarket Data API on startup + re-syncs during maintenance.
+// Real-time updates come from the user WebSocket (trade events).
 
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import type { Position } from "./types.js";
 
 const log = createLogger("positions");
 
-const POSITIONS_FILE = join(config.dataDir, "positions.json");
+const DATA_API_URL = "https://data-api.polymarket.com";
+
+/** Shape returned by GET /positions */
+interface DataApiPosition {
+  asset: string; // token ID
+  conditionId: string;
+  size: number;
+  avgPrice: number;
+  initialValue: number;
+  currentValue: number;
+  cashPnl: number;
+  slug: string;
+  outcome: string;
+  outcomeIndex: number;
+  oppositeOutcome: string;
+  oppositeAsset: string;
+  endDate: string;
+  redeemable: boolean;
+  mergeable: boolean;
+}
 
 export class PositionTracker {
   private positions = new Map<string, Position>();
 
-  constructor() {
-    this.loadFromDisk();
-  }
-
   // ── Public API ──────────────────────────────────────────────────
+
+  /**
+   * Hydrate positions from the Polymarket Data API.
+   * Fetches all current positions for the funder wallet — the API
+   * already filters out resolved/settled markets.
+   */
+  async hydrate(): Promise<void> {
+    try {
+      const url = `${DATA_API_URL}/positions?user=${config.funderAddress}&sizeThreshold=0.01&limit=500`;
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        log.error(`Data API /positions returned ${res.status}`);
+        return;
+      }
+
+      const apiPositions: DataApiPosition[] = await res.json();
+
+      this.positions.clear();
+
+      for (const p of apiPositions) {
+        if (p.size <= 0) continue;
+
+        // Determine YES/NO side from outcome
+        const side: "YES" | "NO" =
+          p.outcome === "Yes" || p.outcomeIndex === 0 ? "YES" : "NO";
+
+        this.positions.set(p.asset, {
+          tokenId: p.asset,
+          slug: p.slug,
+          side,
+          avgPrice: p.avgPrice,
+          size: p.size,
+          totalCost: p.initialValue,
+          openedAt: Date.now(),
+        });
+      }
+
+      log.info(`Hydrated ${this.positions.size} position(s) from Data API`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`Failed to hydrate positions: ${message}`);
+    }
+  }
 
   /** Get position for a token. */
   getPosition(tokenId: string): Position | null {
@@ -84,8 +142,6 @@ export class PositionTracker {
       });
     }
 
-    this.saveToDisk();
-
     log.record("BUY recorded", {
       tokenId,
       slug,
@@ -127,39 +183,5 @@ export class PositionTracker {
       this.positions.delete(tokenId);
       log.info(`Position closed: ${tokenId} (${existing.slug})`);
     }
-
-    this.saveToDisk();
-  }
-
-  // ── Persistence ─────────────────────────────────────────────────
-
-  private loadFromDisk(): void {
-    if (!existsSync(POSITIONS_FILE)) return;
-    try {
-      const raw: Position[] = JSON.parse(
-        readFileSync(POSITIONS_FILE, "utf-8"),
-      );
-      for (const p of raw) {
-        if (p.size > 0) {
-          this.positions.set(p.tokenId, p);
-        }
-      }
-      log.info(
-        `Loaded ${this.positions.size} open position(s) from disk`,
-      );
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.warn(`Could not read positions file: ${message}`);
-    }
-  }
-
-  private saveToDisk(): void {
-    if (!existsSync(config.dataDir)) {
-      mkdirSync(config.dataDir, { recursive: true });
-    }
-    const tmpFile = POSITIONS_FILE + ".tmp";
-    const data = JSON.stringify([...this.positions.values()], null, 2);
-    writeFileSync(tmpFile, data);
-    renameSync(tmpFile, POSITIONS_FILE);
   }
 }

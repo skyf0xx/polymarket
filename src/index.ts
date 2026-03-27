@@ -146,19 +146,23 @@ async function main(): Promise<void> {
   );
   log.info(`Initial matching: ${newMatches} new, ${total} total matches`);
 
-  // 8. Start price cache with matched token IDs
+  // 8. Hydrate positions from Polymarket Data API
   const tokenIds = matcher.getAllTokenIds();
+  log.info("Hydrating positions from Data API...");
+  await positions.hydrate();
+
+  // 9. Start price cache with matched token IDs
   log.info(`Starting price cache for ${tokenIds.length} token(s)...`);
   await prices.start(tokenIds);
 
-  // 9. Start coordinator (wires event listeners + maintenance timer)
+  // 10. Start coordinator (wires event listeners + maintenance timer)
   coordinator.start();
 
-  // 10. Start user stream (authenticated WS for trade confirmations)
+  // 11. Start user stream (authenticated WS for trade confirmations)
   const userStream = new UserStream(positions, pendingOrders, matcher, config.credsFile);
   userStream.start();
 
-  // 11. Health logging
+  // 12. Health logging
   const healthTimer = startHealthLogging(odds, prices, matcher, positions, coordinator);
 
   log.info("═══════════════════════════════════════════════");
