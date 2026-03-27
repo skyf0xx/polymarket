@@ -60,7 +60,14 @@ export interface ComputeEdgeInput {
  * Returns null if the edge is not tradeable.
  */
 export function computeEdge(input: ComputeEdgeInput): EdgeResult {
-  const { sharpProb, takerPrice, sportKey, bankroll, existingPosition, existingEventExposure } = input;
+  const {
+    sharpProb,
+    takerPrice,
+    sportKey,
+    bankroll,
+    existingPosition,
+    existingEventExposure,
+  } = input;
 
   // 1. Gross edge — use taker price (ask when buying) for realistic fill
   const grossEdge = sharpProb - takerPrice;
