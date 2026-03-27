@@ -52,25 +52,24 @@ export const config = {
 
   // Odds API
   oddsApiKey: env("ODDS_API_KEY"),
-  oddsApiWsUrl: env(
-    "ODDS_API_WS_URL",
-    "wss://api.odds-api.io/v3/ws",
-  ),
+  oddsApiWsUrl: env("ODDS_API_WS_URL", "wss://api.odds-api.io/v3/ws"),
   oddsApiRestUrl: env("ODDS_API_REST_URL", "https://api.odds-api.io"),
   bookmakerId: env("BOOKMAKER_ID", ""),
   oddsApiSports: envList("ODDS_API_SPORTS", []),
   oddsApiLeagues: envList("ODDS_API_LEAGUES", []),
 
   // Polymarket
-  polymarketSportsTypes: envList("POLYMARKET_SPORTS_TYPES", ["moneyline", "spreads", "totals"]),
+  polymarketSportsTypes: envList("POLYMARKET_SPORTS_TYPES", [
+    "moneyline",
+    "spreads",
+    "totals",
+  ]),
   polymarketTagIds: envList("POLYMARKET_TAG_IDS", []),
   polymarketMinLiquidity: envNum("POLYMARKET_MIN_LIQUIDITY", 1000),
   clobApiUrl: "https://clob.polymarket.com",
   gammaApiUrl: "https://gamma-api.polymarket.com",
-  polyWsUrl:
-    "wss://ws-subscriptions-clob.polymarket.com/ws/market",
-  userWsUrl:
-    "wss://ws-subscriptions-clob.polymarket.com/ws/user",
+  polyWsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+  userWsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/user",
 
   // Strategy
   marketMaker: envBool("MARKET_MAKER", false),
@@ -79,7 +78,7 @@ export const config = {
   minEdge: envNum("MIN_EDGE", 0.02),
   kellyFraction: envNum("KELLY_FRACTION", 0.25),
   maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
-  maxPositionPct: envNum("MAX_POSITION_PCT", 0.10),
+  maxPositionPct: envNum("MAX_POSITION_PCT", 0.1),
   maxEventPct: envNum("MAX_EVENT_PCT", 0.15),
 
   // Timing
