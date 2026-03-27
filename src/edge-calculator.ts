@@ -168,35 +168,43 @@ export interface ExitResult {
 
 /**
  * Check if an open position should be exited.
- * Exit when the edge has flipped negative (market price > sharp prob).
+ *
+ *  1. Edge still positive → hold
+ *  2. Edge strongly negative (< -2 × minEdge, thesis broken) → cut loss immediately
+ *  3. Edge gone, profit clears round-trip fees → exit to lock gains
+ *  4. Otherwise → hold
  */
 export function checkExit(input: ExitCheckInput): ExitResult {
-  const { position, bestBid, sharpProb, sportKey } = input;
+  const { position, bestBid, sharpProb } = input;
 
-  // Use best bid for exit calc — that's what we'd receive as a taker seller
-  const fee = estimateFee(bestBid, sportKey);
-  const edge = sharpProb - bestBid - fee;
+  const exitFee = estimateFee(bestBid);
+  const edge = sharpProb - bestBid - exitFee;
   const profitPerShare = bestBid - position.avgPrice;
 
-  // Don't exit if edge is still positive — hold
+  // Thesis intact — keep holding
   if (edge > 0) {
     return { shouldExit: false, edge, profitPerShare };
   }
 
-  // Don't exit if profit is too small to cover fees/slippage
-  // Rough estimate: ~2% round-trip cost
-  if (profitPerShare < 0.02) {
+  // Edge reversed hard — thesis broken, cut regardless of P&L
+  if (edge < -2 * config.minEdge) {
     return {
-      shouldExit: false,
-      reason: "profit_too_small_for_fees",
+      shouldExit: true,
+      reason: `loss_cut: edge ${(edge * 100).toFixed(2)}%, P&L ${(profitPerShare * 100).toFixed(1)}¢/share`,
       edge,
       profitPerShare,
     };
   }
 
+  // Edge mildly gone — only exit if profit covers round-trip fees
+  const roundTripFee = estimateFee(position.avgPrice) + exitFee;
+  if (profitPerShare < roundTripFee) {
+    return { shouldExit: false, edge, profitPerShare };
+  }
+
   return {
     shouldExit: true,
-    reason: `edge_negative (${(edge * 100).toFixed(2)}%), locking ${(profitPerShare * 100).toFixed(1)}¢/share profit`,
+    reason: `edge_gone (${(edge * 100).toFixed(2)}%), locking ${(profitPerShare * 100).toFixed(1)}¢/share`,
     edge,
     profitPerShare,
   };
