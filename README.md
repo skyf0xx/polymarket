@@ -62,9 +62,8 @@ executor.ts       — Places orders via Polymarket CLOB
 No database. All state is in-memory with JSON file persistence in `./data/`:
 
 - `match-table.json` — Polymarket ↔ Odds API event mappings
-- `positions.json` — Open positions (survives restarts)
 - `trades.jsonl` — Append-only edge/trade log for dry-run analysis
 
 ## Deploy
 
-Long-running process on Railway. Use a Railway volume mounted at `/data/` so `positions.json` and `match-table.json` survive deploys.
+Long-running process on Railway. Use a Railway volume mounted at `/data/` so `match-table.json` and `trades.jsonl` survive deploys. Positions are hydrated live from the CLOB API on startup.

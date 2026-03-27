@@ -11,7 +11,7 @@ Fully event-driven — no polling loop. Two persistent WebSocket connections fee
 - **`coordinator.ts`** — Routes updates, triggers edge calc, manages exit checks, runs maintenance timer
 - **`market-matcher.ts`** — Maps Polymarket slugs to Odds API events (local cache + Haiku LLM fallback)
 - **`edge-calculator.ts`** — `sharpProb - polyPrice`, fee adjustment, Kelly sizing, cooldown state
-- **`position-tracker.ts`** — Open positions persisted to `data/positions.json`
+- **`position-tracker.ts`** — Open positions hydrated from CLOB API + live updates via user WebSocket
 - **`executor.ts`** — orders via `@polymarket/clob-client`
 - **`index.ts`** — Entry point: init CLOB client → hydrate → match → start coordinator
 
@@ -41,7 +41,6 @@ Minimum net edge to trade: `MIN_EDGE` (default 2%). Per-market cooldown after si
 No database. In-memory Maps backed by JSON files in `data/` (Railway volume mount):
 
 - `data/match-table.json` — Polymarket slug ↔ Odds API event ID mappings
-- `data/positions.json` — open positions for exit logic + sizing caps
 - `data/trades.jsonl` — append-only edge/trade log for dry-run validation
 
 ## Environment
