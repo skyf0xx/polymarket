@@ -212,23 +212,29 @@ export function checkExit(input: ExitCheckInput): ExitResult {
 
 // ── Logging Helper ────────────────────────────────────────────────
 
+let loggedSlugDay = "";
+const loggedSlugs = new Set<string>();
+
 export function logEdge(
-  tokenId: string,
+  _tokenId: string,
   slug: string,
   sharpProb: number,
   polyPrice: number,
   result: EdgeResult,
 ): void {
-  log.record(result.tradeable ? "EDGE DETECTED" : "edge checked", {
-    tokenId,
+  if (!result.tradeable) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== loggedSlugDay) {
+    loggedSlugDay = today;
+    loggedSlugs.clear();
+  }
+  if (loggedSlugs.has(slug)) return;
+  loggedSlugs.add(slug);
+  log.record("EDGE DETECTED", {
     slug,
     sharpProb,
     polyPrice,
     grossEdge: result.grossEdge,
     netEdge: result.netEdge,
-    kellyFraction: result.kellyFraction,
-    suggestedSize: result.suggestedSize,
-    tradeable: result.tradeable,
-    ...(result.skipReason && { skipReason: result.skipReason }),
   });
 }
