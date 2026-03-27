@@ -96,11 +96,15 @@ export const config = {
   // Gamma Teams API — league codes for team abbreviation hydration
   // These are Polymarket/Gamma league slugs, NOT Odds API slugs
   gammaLeagues: envList("GAMMA_LEAGUES", [
-    "nba", "cbb", "wnba",   // basketball
-    "nfl", "cfb",            // american football
-    "mlb",                   // baseball
-    "atp", "wta",            // tennis
-    "epl",                   // premier league
+    "nba",
+    "cbb",
+    "wnba", // basketball
+    "nfl",
+    "cfb", // american football
+    "mlb", // baseball
+    "atp",
+    "wta", // tennis
+    "epl", // premier league
   ]),
 
   // Anthropic (for market matching)
@@ -108,10 +112,7 @@ export const config = {
   matcherModel: env("MATCHER_MODEL", "claude-haiku-4-5-20251001"),
 
   // Polygon RPC
-  polygonRpc: env(
-    "POLYGON_RPC",
-    "https://polygon-rpc.com",
-  ),
+  polygonRpc: env("POLYGON_RPC", "https://polygon-rpc.com"),
 } as const;
 
 export type Config = typeof config;
