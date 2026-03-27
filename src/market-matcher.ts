@@ -197,6 +197,8 @@ export class MarketMatcher {
           if (teams) batchTeams.push(teams);
         }
         const filteredOddsEvents = oddsEvents.filter((e) => {
+          // Sport filter: if we know what sport this batch needs, exclude unrelated sports
+          if (batchOddsSports.size > 0 && !batchOddsSports.has(e.sport)) return false;
           if (!batchDates.has(e.time.slice(0, 10))) return false;
           // If we resolved teams, only include events that match at least one market's teams
           if (batchTeams.length > 0) {

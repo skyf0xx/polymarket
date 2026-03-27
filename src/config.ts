@@ -107,6 +107,33 @@ export const config = {
     "epl", // premier league
   ]),
 
+  // Maps Gamma/Polymarket league slug (from market slug prefix) → Odds API sport name.
+  // Format: "epl:football,nba:basketball,nfl:american-football"
+  // Used by the pre-filter in market-matcher to only send relevant odds events to the LLM.
+  gammaLeagueToOddsSport: (() => {
+    const raw = process.env.GAMMA_LEAGUE_TO_ODDS_API_SPORT ?? "";
+    const map = new Map<string, string>([
+      // override with env var
+      ["epl", "football"],
+      ["nba", "basketball"],
+      ["nfl", "american-football"],
+      ["mlb", "baseball"],
+      ["cbb", "basketball"],
+      ["wnba", "basketball"],
+      ["cfb", "american-football"],
+      ["atp", "tennis"],
+      ["wta", "tennis"],
+    ]);
+    for (const pair of raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)) {
+      const [league, sport] = pair.split(":").map((s) => s.trim());
+      if (league && sport) map.set(league, sport);
+    }
+    return map;
+  })(),
+
   // Anthropic (for market matching)
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   matcherModel: env("MATCHER_MODEL", "claude-haiku-4-5-20251001"),
