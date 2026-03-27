@@ -23,7 +23,7 @@ function formatConsole(entry: LogEntry): string {
 
 function writeToFile(entry: LogEntry): void {
   try {
-    appendFileSync(LOG_FILE, JSON.stringify(entry) + "\n");
+    appendFileSync(LOG_FILE, JSON.stringify(entry.data ?? {}) + "\n");
   } catch {
     // Swallow file write errors — don't crash the bot over logging
   }
