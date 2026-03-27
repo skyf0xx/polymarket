@@ -12,7 +12,7 @@ import {
 import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import { TeamKnowledge, resolveIndices, looseNameMatch } from "./team-knowledge.js";
+import { TeamKnowledge, resolveIndices, looseNameMatch, parseSlug } from "./team-knowledge.js";
 import type {
   MatchEntry,
   MarketType,
@@ -196,6 +196,17 @@ export class MarketMatcher {
           const teams = this.knowledge.resolveTeams(pm.slug);
           if (teams) batchTeams.push(teams);
         }
+        // Determine which Odds API sport(s) this batch maps to, so we don't
+        // feed basketball events to EPL markets and vice versa.
+        const batchOddsSports = new Set<string>();
+        for (const pm of batch) {
+          const parsed = parseSlug(pm.slug);
+          if (parsed) {
+            const mappedSport = config.gammaLeagueToOddsSport.get(parsed.sport);
+            if (mappedSport) batchOddsSports.add(mappedSport);
+          }
+        }
+
         const filteredOddsEvents = oddsEvents.filter((e) => {
           // Sport filter: if we know what sport this batch needs, exclude unrelated sports
           if (batchOddsSports.size > 0 && !batchOddsSports.has(e.sport)) return false;
