@@ -573,6 +573,178 @@
       "sas:mil": {
         "Yes": "San Antonio Spurs",
         "No": "Milwaukee Bucks"
+      },
+      "phi:cha": {
+        "Yes": "Philadelphia 76ers",
+        "No": "Charlotte Hornets"
+      },
+      "sac:atl": {
+        "Yes": "Sacramento Kings",
+        "No": "Atlanta Hawks"
+      },
+      "det:min": {
+        "Yes": "Detroit Pistons",
+        "No": "Minnesota Timberwolves"
+      },
+      "uta:phx": {
+        "Yes": "Utah Jazz",
+        "No": "Phoenix Suns"
+      },
+      "chi:mem": {
+        "Yes": "Chicago Bulls",
+        "No": "Memphis Grizzlies"
+      }
+    },
+    "challenger-atp-challenger-naples-italy-men-singles": {
+      "medjedo:sachko": {
+        "Yes": "Medjedovic, Hamad",
+        "No": "Sachko, Vitaliy"
+      },
+      "altmaie:bondiol": {
+        "Yes": "Altmaier, Daniel",
+        "No": "Bondioli, Federico"
+      }
+    },
+    "challenger-atp-challenger-montemar-spain-men-singles": {
+      "ofner:busta": {
+        "Yes": "Ofner, Sebastian",
+        "No": "Carreno Busta, Pablo"
+      },
+      "safiull:ruiz": {
+        "Yes": "Safiullin, Roman",
+        "No": "Llamas Ruiz, Pablo"
+      }
+    },
+    "wta-125k-wta-125k-dubrovnik-croatia-women-singles": {
+      "kalinin:zidanse": {
+        "Yes": "Kalinina, Anhelina",
+        "No": "Zidansek, Tamara"
+      }
+    },
+    "challenger-atp-challenger-split-croatia-men-singles": {
+      "poljica:coppeja": {
+        "Yes": "Poljicak, Mili",
+        "No": "Coppejans, Kimmer"
+      }
+    },
+    "challenger-atp-challenger-sao-paulo-brazil-men-singles": {
+      "burruch:prado": {
+        "Yes": "Burruchaga, Roman Andres",
+        "No": "Prado Angelo, Juan Carlos"
+      }
+    },
+    "wta-wta-charleston-usa-women-singles": {
+      "arconad:tomova": {
+        "Yes": "Arconada, Usue Maitane",
+        "No": "Tomova, Viktoriya"
+      },
+      "vekic:vickery": {
+        "Yes": "Vekic, Donna",
+        "No": "Vickery, Sachia"
+      },
+      "vidmano:jokic": {
+        "Yes": "Vidmanova, Darja",
+        "No": "Jokic, Katarina"
+      },
+      "kuderme:ansari": {
+        "Yes": "Kudermetova, Polina",
+        "No": "Ansari, Carolyn"
+      },
+      "vedder:ito": {
+        "Yes": "Vedder, Eva",
+        "No": "Ito, Aoi"
+      },
+      "mladeno:stoiana": {
+        "Yes": "Mladenovic, Kristina",
+        "No": "Stoiana, Mary"
+      },
+      "urhobo:osuigwe": {
+        "Yes": "Urhobo, Akasha",
+        "No": "Osuigwe, Whitney"
+      },
+      "bolsova:gorgodz": {
+        "Yes": "Bolsova, Aliona",
+        "No": "Gorgodze, Ekaterine"
+      },
+      "yuan:persson": {
+        "Yes": "Yuan, Yue",
+        "No": "Rinaldo Persson, Kajsa"
+      },
+      "kalieva:brengle": {
+        "Yes": "Kalieva, Elvina",
+        "No": "Brengle, Madison"
+      }
+    },
+    "usa-mlb": {
+      "det:sd": {
+        "Yes": "Detroit Tigers",
+        "No": "San Diego Padres"
+      },
+      "cle:sea": {
+        "Yes": "Cleveland Guardians",
+        "No": "Seattle Mariners"
+      },
+      "ari:lad": {
+        "Yes": "Arizona Diamondbacks",
+        "No": "Los Angeles Dodgers"
+      },
+      "tb:stl": {
+        "Yes": "Tampa Bay Rays",
+        "No": "St. Louis Cardinals"
+      },
+      "tex:phi": {
+        "Yes": "Texas Rangers",
+        "No": "Philadelphia Phillies"
+      },
+      "pit:nym": {
+        "Yes": "Pittsburgh Pirates",
+        "No": "New York Mets"
+      },
+      "laa:hou": {
+        "Yes": "Los Angeles Angels",
+        "No": "Houston Astros"
+      },
+      "kc:atl": {
+        "Yes": "Kansas City Royals",
+        "No": "Atlanta Braves"
+      },
+      "nyy:sf": {
+        "Yes": "New York Yankees",
+        "No": "San Francisco Giants"
+      },
+      "col:mia": {
+        "Yes": "Colorado Rockies",
+        "No": "Miami Marlins"
+      },
+      "oak:tor": {
+        "Yes": "Athletics",
+        "No": "Toronto Blue Jays"
+      },
+      "wsh:chc": {
+        "Yes": "Washington Nationals",
+        "No": "Chicago Cubs"
+      },
+      "min:bal": {
+        "Yes": "Minnesota Twins",
+        "No": "Baltimore Orioles"
+      },
+      "bos:cin": {
+        "Yes": "Boston Red Sox",
+        "No": "Cincinnati Reds"
+      },
+      "cws:mil": {
+        "Yes": "Chicago White Sox",
+        "No": "Milwaukee Brewers"
+      }
+    },
+    "challenger-atp-challenger-yokkaichi-japan-men-singles": {
+      "uchiyam:matsuok": {
+        "Yes": "Uchiyama, Yasutaka",
+        "No": "Matsuoka, Hayato"
+      },
+      "noguchi:wendelk": {
+        "Yes": "Noguchi, Rio",
+        "No": "Wendelken, Harry"
       }
     }
   }
