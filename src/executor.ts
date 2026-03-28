@@ -126,23 +126,38 @@ export async function executeSignal(
       );
     }
 
+    const isSell = signal.side === "SELL";
+    const sdkSide = isSell ? Side.SELL : Side.BUY;
+
     log.info(
-      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}% mode=${config.marketMaker ? "maker" : "taker"}`,
+      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}% type=${isSell ? "FOK" : "GTD"}`,
     );
 
-    // 5. Place order via SDK
-    const sdkSide = signal.side === "BUY" ? Side.BUY : Side.SELL;
-    const resp = await client.createAndPostOrder(
-      {
-        tokenID: signal.tokenId,
-        price: orderPrice,
-        size,
-        side: sdkSide,
-        expiration: Math.floor(Date.now() / 1_000) + 300,
-      },
-      { tickSize, negRisk },
-      OrderType.GTD,
-    );
+    // 4. Place order via SDK
+    //    BUY: GTD limit order (5 min expiry)
+    //    SELL: FOK market order (fill immediately or cancel — we want out)
+    const resp = isSell
+      ? await client.createAndPostMarketOrder(
+          {
+            tokenID: signal.tokenId,
+            price: orderPrice, // worst acceptable price (bestBid)
+            amount: size,
+            side: sdkSide,
+          },
+          { tickSize, negRisk },
+          OrderType.FOK,
+        )
+      : await client.createAndPostOrder(
+          {
+            tokenID: signal.tokenId,
+            price: orderPrice,
+            size,
+            side: sdkSide,
+            expiration: Math.floor(Date.now() / 1_000) + 300,
+          },
+          { tickSize, negRisk },
+          OrderType.GTD,
+        );
 
     if (resp?.success) {
       log.record(`✓ Order placed`, {
