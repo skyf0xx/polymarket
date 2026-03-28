@@ -330,13 +330,18 @@ export class Coordinator {
         return;
       }
 
+      // For sells: use bestBid as the exit price (what we receive as taker).
+      // Floor the size — CLOB only accepts whole integer shares for sells.
+      const sellSize = Math.floor(position.size);
+      if (sellSize < 1) return;
+
       const signal: TradeSignal = {
         tokenId,
         slug: match.slug,
         side: "SELL",
         tokenSide: tokenId === match.tokenIds.yes ? "YES" : "NO",
-        price: priceEntry.price,
-        size: position.size,
+        price: priceEntry.bestBid,
+        size: sellSize,
         edge: exitResult.edge,
         kellyFraction: 0,
         reason: "exit_signal",
