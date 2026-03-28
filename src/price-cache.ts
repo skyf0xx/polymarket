@@ -1,6 +1,8 @@
 // src/price-cache.ts
 // Manages Polymarket WebSocket connection for live prices.
 // Maintains Map<tokenId, PriceEntry> and emits 'price_update' events.
+// No REST hydration — subscribes with initial_dump=true so the WS sends
+// a full book snapshot for each token on connect.
 
 import WebSocket from "ws";
 import { EventEmitter } from "eventemitter3";
@@ -90,8 +92,8 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
     return this.cache.size;
   }
 
-  /** Start with initial set of token IDs. REST hydrate then connect WS. */
-  async start(tokenIds: string[]): Promise<void> {
+  /** Start with initial set of token IDs. Connect WS and subscribe (initial_dump gives snapshots). */
+  start(tokenIds: string[]): void {
     for (const id of tokenIds) this.subscribedTokens.add(id);
     if (tokenIds.length === 0) {
       log.info(
@@ -99,7 +101,6 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       );
       return;
     }
-    await this.hydrateFromRest(tokenIds);
     this.connectWs();
   }
 
@@ -109,11 +110,6 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
     if (newIds.length === 0) return;
 
     for (const id of newIds) this.subscribedTokens.add(id);
-
-    // Hydrate new tokens from REST
-    this.hydrateFromRest(newIds).catch((err) =>
-      log.error(`Failed to hydrate new tokens: ${err.message}`),
-    );
 
     // Connect WS if not yet started, otherwise subscribe on existing connection
     if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
@@ -131,48 +127,6 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       this.ws.close();
       this.ws = null;
     }
-  }
-
-  // ── REST Hydration ──────────────────────────────────────────────
-
-  private async hydrateFromRest(tokenIds: string[]): Promise<void> {
-    log.info(`Hydrating prices for ${tokenIds.length} token(s)...`);
-
-    // Fetch in parallel, batched to avoid hammering the API
-    const BATCH = 20;
-    for (let i = 0; i < tokenIds.length; i += BATCH) {
-      const batch = tokenIds.slice(i, i + BATCH);
-      const results = await Promise.allSettled(
-        batch.map(async (tokenId) => {
-          const res = await fetch(
-            `${config.clobApiUrl}/last-trade-price?token_id=${tokenId}`,
-          );
-          if (!res.ok) return null;
-          const data = await res.json();
-          const price = Number(data?.price ?? 0);
-          if (price > 0) {
-            const entry: PriceEntry = {
-              tokenId,
-              price,
-              bestBid: price, // REST only gives last trade; WS will refine
-              bestAsk: price,
-              hasBook: false,
-              updatedAt: Date.now(),
-            };
-            this.cache.set(tokenId, entry);
-            return entry;
-          }
-          return null;
-        }),
-      );
-
-      const hydrated = results.filter(
-        (r) => r.status === "fulfilled" && r.value !== null,
-      ).length;
-      log.debug(`Hydrated batch ${i / BATCH + 1}: ${hydrated}/${batch.length}`);
-    }
-
-    log.info(`Price cache ready: ${this.cache.size} tokens`);
   }
 
   // ── WebSocket Connection ────────────────────────────────────────
@@ -337,14 +291,7 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       `Reconnecting Polymarket WS in ${delay}ms (attempt ${this.reconnectAttempt})`,
     );
 
-    setTimeout(async () => {
-      try {
-        const tokens = [...this.subscribedTokens];
-        await this.hydrateFromRest(tokens);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.error(`REST hydration failed on reconnect: ${message}`);
-      }
+    setTimeout(() => {
       this.connectWs();
     }, delay);
   }

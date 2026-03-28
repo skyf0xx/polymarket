@@ -385,23 +385,12 @@ export class Coordinator {
 
   // ── Maintenance ─────────────────────────────────────────────────
 
-  private static readonly ODDS_REHYDRATE_INTERVAL_MS = 6 * 60 * 60 * 1_000; // 6h
-
   private async runMaintenance(): Promise<void> {
     if (this.destroyed) return;
 
     log.info("Running maintenance cycle...");
 
     try {
-      // 0. Periodic odds rehydration — guards against WS drift over long runs
-      const oddsAge = Date.now() - this.odds.lastHydrateAt;
-      if (oddsAge >= Coordinator.ODDS_REHYDRATE_INTERVAL_MS) {
-        log.info(
-          `Odds cache is ${Math.round(oddsAge / 3_600_000)}h old — rehydrating`,
-        );
-        await this.odds.rehydrate();
-      }
-
       // 1. Refresh Polymarket sports markets from Gamma
       const polymarkets = await fetchPolymarketSportsMarkets();
       log.info(
