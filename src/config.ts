@@ -77,6 +77,7 @@ export const config = {
   // Edge & Sizing
   minEdge: envNum("MIN_EDGE", 0.02),
   minPrice: envNum("MIN_PRICE", 0.1),
+  noLiquidityBand: envNum("NO_LIQUIDITY_BAND", 0.02),
   kellyFraction: envNum("KELLY_FRACTION", 0.25),
   maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
   maxPositionPct: envNum("MAX_POSITION_PCT", 0.1),
