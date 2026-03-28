@@ -130,15 +130,11 @@ async function main(): Promise<void> {
   const polymarkets = await fetchPolymarketSportsMarkets();
   log.info(`Found ${polymarkets.length} active sports market(s)`);
 
-  // 5. Start odds stream (REST hydrate + WS connect)
-  log.info("Starting odds stream...");
-  await odds.start();
-
-  // 6. Hydrate team knowledge from Gamma Teams API
+  // 5. Hydrate team knowledge from Gamma Teams API
   log.info(`Hydrating team knowledge for leagues: [${config.gammaLeagues.join(", ")}]`);
   await matcher.hydrateTeams(config.gammaLeagues);
 
-  // 7. Run initial match cycle
+  // 6. Run initial match cycle (uses disk-cached matches + deterministic matching)
   log.info("Running initial market match cycle...");
   const { newMatches, total } = await matcher.runMatchCycle(
     odds.getAllLines(),
@@ -146,14 +142,18 @@ async function main(): Promise<void> {
   );
   log.info(`Initial matching: ${newMatches} new, ${total} total matches`);
 
-  // 8. Hydrate positions from Polymarket Data API
-  const tokenIds = matcher.getAllTokenIds();
+  // 7. Hydrate positions from Polymarket Data API (critical — no WS alternative)
   log.info("Hydrating positions from Data API...");
   await positions.hydrate();
 
-  // 9. Start price cache with matched token IDs
+  // 8. Start odds stream (WS only — cache populates from live updates)
+  log.info("Starting odds stream...");
+  odds.start();
+
+  // 9. Start price cache with matched token IDs (WS with initial_dump snapshots)
+  const tokenIds = matcher.getAllTokenIds();
   log.info(`Starting price cache for ${tokenIds.length} token(s)...`);
-  await prices.start(tokenIds);
+  prices.start(tokenIds);
 
   // 10. Start coordinator (wires event listeners + maintenance timer)
   coordinator.start();

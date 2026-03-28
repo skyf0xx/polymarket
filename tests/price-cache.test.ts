@@ -1,7 +1,7 @@
 // tests/price-cache.test.ts
 // Integration tests for PriceCache.
 // Tests hit the real Polymarket CLOB WebSocket — no mocks.
-// Public endpoints, no auth required for reads.
+// No REST hydration — WS initial_dump provides book snapshots on subscribe.
 
 import 'dotenv/config'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -63,24 +63,23 @@ describe('PriceCache — state (no network)', () => {
     expect(cache.size, 'size should be 0 before any start()').toBe(0)
   })
 
-  it('getAllPrices() returns an empty Map before hydration', () => {
+  it('getAllPrices() returns an empty Map before start', () => {
     const cache = new PriceCache()
     const all = cache.getAllPrices()
     expect(all instanceof Map, 'getAllPrices should return a Map').toBe(true)
-    expect(all.size, 'Map should be empty before hydration').toBe(0)
+    expect(all.size, 'Map should be empty before start').toBe(0)
   })
 })
 
 // ── WebSocket tests — single shared connection ────────────────────
-// We create one cache in beforeAll, subscribe to tokens, wait for updates,
-// then clean up in afterAll. This avoids rapid connect/disconnect cycles
-// that can cause code=1005 disconnections from the Polymarket server.
+// We create one cache in beforeAll, subscribe to tokens, wait for WS
+// initial_dump book snapshots, then run all assertions on that data.
 
 let sharedCache: PriceCache
 let subscribedTokenId: string
 let firstUpdate: PriceEntry
 
-describe('PriceCache — WebSocket + REST hydration', () => {
+describe('PriceCache — WebSocket (initial_dump)', () => {
   beforeAll(async () => {
     const tokenIds = await fetchActiveTokenIds(2)
     subscribedTokenId = tokenIds[0]
@@ -101,9 +100,9 @@ describe('PriceCache — WebSocket + REST hydration', () => {
       })
     })
 
-    await sharedCache.start(tokenIds)
+    sharedCache.start(tokenIds)
     firstUpdate = await updateReceived
-  }, 60_000) // 60s: REST hydration + WS connect + book snapshot
+  }, 60_000) // WS connect + initial_dump snapshot
 
   afterAll(() => {
     sharedCache?.destroy()
@@ -161,7 +160,6 @@ describe('PriceCache — WebSocket + REST hydration', () => {
   })
 
   it('size reflects the number of tokens with received price data', () => {
-    // After at least one price_update, size >= 1
     expect(sharedCache.size, 'size should be >= 1 after receiving at least one update').toBeGreaterThanOrEqual(1)
   })
 
