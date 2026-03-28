@@ -203,8 +203,12 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       const text = raw.toString();
       if (text === "PONG") return;
       try {
-        const msg = JSON.parse(text);
-        this.handleMessage(msg);
+        const parsed = JSON.parse(text);
+        // Polymarket WS wraps messages in an array: [{event_type: "book", ...}]
+        const msgs: PolymarketWsMessage[] = Array.isArray(parsed) ? parsed : [parsed];
+        for (const msg of msgs) {
+          this.handleMessage(msg);
+        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         log.warn(`Failed to parse WS message: ${message}`);
