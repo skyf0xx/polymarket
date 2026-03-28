@@ -335,12 +335,23 @@ describe('MarketMatcher sport isolation', () => {
     expect(nbaParsed!.sport, 'NBA slug sport should be "nba"').toBe('nba')
   })
 
-  it('parseSlug() returns null for Polymarket-specific suffixes like -mac and -draw', () => {
-    // These slugs use non-standard suffixes that parseSlug does not recognize.
-    // The sport pre-filter must NOT rely on parseSlug for sport extraction —
-    // it must read the slug prefix directly to avoid bypassing the sport guard.
-    expect(parseSlug('epl-mac-cry-2026-03-21-mac'), 'parseSlug should return null for -mac suffix').toBeNull()
-    expect(parseSlug('epl-mac-cry-2026-03-21-draw'), 'parseSlug should return null for -draw suffix').toBeNull()
+  it('parseSlug() correctly parses football-style -teamabbr and -draw suffixes', () => {
+    // These slugs use team-abbr and "draw" suffixes — parseSlug now recognises them as h2h markets.
+    // winSide encodes which outcome "Yes" maps to deterministically (no LLM cache needed).
+    const macWins = parseSlug('epl-mac-cry-2026-03-21-mac')
+    expect(macWins, 'epl -mac suffix should parse').not.toBeNull()
+    expect(macWins!.sport).toBe('epl')
+    expect(macWins!.marketType).toBe('h2h')
+    expect(macWins!.winSide, '-mac suffix = team1 wins').toBe('team1')
+
+    const draw = parseSlug('epl-mac-cry-2026-03-21-draw')
+    expect(draw, 'epl -draw suffix should parse').not.toBeNull()
+    expect(draw!.marketType).toBe('h2h')
+    expect(draw!.winSide, '-draw suffix').toBe('draw')
+
+    const cryWins = parseSlug('epl-mac-cry-2026-03-21-cry')
+    expect(cryWins, 'epl -cry suffix should parse').not.toBeNull()
+    expect(cryWins!.winSide, '-cry suffix = team2 wins').toBe('team2')
   })
 
   it('gammaLeagueToOddsSport config maps epl→football and nba→basketball', () => {
