@@ -198,13 +198,14 @@ export class MarketMatcher {
         }
         // Determine which Odds API sport(s) this batch maps to, so we don't
         // feed basketball events to EPL markets and vice versa.
+        // Read sport from the slug prefix directly (first hyphen-delimited segment)
+        // rather than relying on parseSlug(), which requires a recognized market type
+        // suffix and returns null for Polymarket-specific suffixes like "-mac" or "-draw".
         const batchOddsSports = new Set<string>();
         for (const pm of batch) {
-          const parsed = parseSlug(pm.slug);
-          if (parsed) {
-            const mappedSport = config.gammaLeagueToOddsSport.get(parsed.sport);
-            if (mappedSport) batchOddsSports.add(mappedSport);
-          }
+          const slugSport = pm.slug.split('-')[0];
+          const mappedSport = config.gammaLeagueToOddsSport.get(slugSport);
+          if (mappedSport) batchOddsSports.add(mappedSport);
         }
 
         const filteredOddsEvents = oddsEvents.filter((e) => {
@@ -219,6 +220,10 @@ export class MarketMatcher {
           }
           return true; // fallback: date-only filter if no teams could be resolved
         });
+        if (filteredOddsEvents.length === 0) {
+          log.warn(`Batch ${i + 1}/${batches.length}: no odds events after sport/date/team filter — skipping LLM call`);
+          continue;
+        }
         const matches = await this.callLlmMatcher(filteredOddsEvents, batch);
         totalLlmMatches += matches.length;
 
