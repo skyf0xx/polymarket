@@ -66,7 +66,7 @@ export class PositionTracker {
           slug: p.slug,
           side,
           avgPrice: p.avgPrice,
-          size: p.size,
+          size: Math.floor(p.size), // CLOB only accepts whole integer shares
           totalCost: p.initialValue,
           openedAt: Date.now(),
         });
