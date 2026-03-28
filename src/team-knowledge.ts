@@ -39,6 +39,8 @@ export interface ParsedSlug {
   marketType: MarketType;
   side?: "away" | "home"; // for spreads
   point?: number;
+  // For football-style h2h slugs: which team's win the suffix encodes ("team1"/"team2"), or "draw"
+  winSide?: "team1" | "team2" | "draw";
 }
 
 interface GammaTeam {
@@ -186,13 +188,21 @@ export class TeamKnowledge {
       });
       if (!event) continue;
 
-      // For h2h: need cached outcomeMap from a prior LLM match
+      // For h2h: derive outcomeMap from the slug suffix when possible,
+      // otherwise fall back to the disk-cached value from a prior LLM match.
+      // Football-style slugs (-draw, -team1abbr, -team2abbr) are fully deterministic.
+      // Bare-date slugs (no suffix) need the cache since Polymarket's Yes/No is inconsistent.
       let outcomeMap: { Yes: string; No: string };
       if (parsed.marketType === "h2h") {
-        const matchupKey = `${parsed.team1.toLowerCase()}:${parsed.team2.toLowerCase()}`;
-        const cached = this.h2hCache[league]?.[matchupKey];
-        if (!cached) continue; // no cached h2h data — needs LLM
-        outcomeMap = cached;
+        if (parsed.winSide) {
+          // Deterministic: suffix encodes which outcome Yes maps to
+          outcomeMap = buildOutcomeMap(parsed, awayFull, homeFull);
+        } else {
+          const matchupKey = `${parsed.team1.toLowerCase()}:${parsed.team2.toLowerCase()}`;
+          const cached = this.h2hCache[league]?.[matchupKey];
+          if (!cached) continue; // no cached h2h data — needs LLM
+          outcomeMap = cached;
+        }
       } else {
         outcomeMap = buildOutcomeMap(parsed, awayFull, homeFull);
       }
@@ -303,7 +313,8 @@ export class TeamKnowledge {
  */
 export function parseSlug(slug: string): ParsedSlug | null {
   const parts = slug.split("-");
-  if (parts.length < 7) return null;
+  // Minimum: sport + team1 + team2 + YYYY + MM + DD = 6 parts
+  if (parts.length < 6) return null;
 
   const sport = parts[0];
 
@@ -326,7 +337,11 @@ export function parseSlug(slug: string): ParsedSlug | null {
   const date = `${parts[yearIdx]}-${parts[yearIdx + 1]}-${parts[yearIdx + 2]}`;
 
   const afterDate = parts.slice(yearIdx + 3);
-  if (afterDate.length === 0) return null;
+
+  // No suffix: bare date slug — e.g. "cbb-tenn-iowast-2026-03-27" — binary h2h (Yes/No)
+  if (afterDate.length === 0) {
+    return { sport, team1, team2, date, marketType: "h2h" };
+  }
 
   const typePart = afterDate[0];
   let marketType: MarketType;
@@ -334,10 +349,21 @@ export function parseSlug(slug: string): ParsedSlug | null {
   else if (typePart === "moneyline" || typePart === "h2h" || typePart === "ml")
     marketType = "h2h";
   else if (typePart === "totals" || typePart === "total") marketType = "totals";
+  else if (typePart === "draw" || typePart === team1 || typePart === team2)
+    // Football-style: "-draw", "-awayabbr", "-homeabbr" — all h2h outcome markets
+    marketType = "h2h";
   else return null;
 
   let side: "away" | "home" | undefined;
   let point: number | undefined;
+  let winSide: "team1" | "team2" | "draw" | undefined;
+
+  // Decode football-style h2h win suffix
+  if (marketType === "h2h" && (typePart === "draw" || typePart === team1 || typePart === team2)) {
+    if (typePart === "draw") winSide = "draw";
+    else if (typePart === team1) winSide = "team1";
+    else winSide = "team2";
+  }
 
   for (let i = 1; i < afterDate.length; i++) {
     const p = afterDate[i];
@@ -350,7 +376,7 @@ export function parseSlug(slug: string): ParsedSlug | null {
     }
   }
 
-  return { sport, team1, team2, date, marketType, side, point };
+  return { sport, team1, team2, date, marketType, side, point, winSide };
 }
 
 /** Resolve outcome token indices using the full fallback chain. */
@@ -416,6 +442,12 @@ function buildOutcomeMap(
   homeFull: string,
 ): { Yes: string; No: string } {
   if (parsed.marketType === "totals") return { Yes: "Over", No: "Under" };
+
+  // Football-style h2h: suffix encodes which outcome "Yes" maps to
+  if (parsed.winSide === "draw") return { Yes: "Draw", No: "No Draw" };
+  if (parsed.winSide === "team1") return { Yes: awayFull, No: homeFull };
+  if (parsed.winSide === "team2") return { Yes: homeFull, No: awayFull };
+
   // spreads: side is guaranteed non-null by tryMatch guard above
   if (parsed.side === "home") return { Yes: homeFull, No: awayFull };
   return { Yes: awayFull, No: homeFull }; // side === "away" (default)
