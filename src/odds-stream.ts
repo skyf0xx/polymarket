@@ -448,8 +448,10 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
           };
         }
       } else if (name === "spread") {
-        // Store all lines where both sides are present — coordinator picks by match.point
-        line.markets.spreads = market.odds
+        // Upsert by point — WS may send partial updates (only changed lines),
+        // so merge into existing array rather than replacing it outright.
+        const existing = line.markets.spreads ?? [];
+        const incoming = market.odds
           .filter(
             (o) =>
               o.home != null &&
@@ -464,9 +466,18 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
             away: decimalToProb(parseFloat(o.away!)),
             point: o.hdp ?? 0,
           }));
+        // Replace matching points, append new ones
+        const merged = [...existing];
+        for (const inc of incoming) {
+          const idx = merged.findIndex((e) => Math.abs(e.point - inc.point) < 0.05);
+          if (idx >= 0) merged[idx] = inc;
+          else merged.push(inc);
+        }
+        line.markets.spreads = merged;
       } else if (name === "totals") {
-        // Store all lines where both sides are present — coordinator picks by match.point
-        line.markets.totals = market.odds
+        // Upsert by point — same rationale as spreads above
+        const existing = line.markets.totals ?? [];
+        const incoming = market.odds
           .filter(
             (o) =>
               o.over != null &&
@@ -481,6 +492,13 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
             under: decimalToProb(parseFloat(o.under!)),
             point: o.hdp ?? 0,
           }));
+        const merged = [...existing];
+        for (const inc of incoming) {
+          const idx = merged.findIndex((e) => Math.abs(e.point - inc.point) < 0.05);
+          if (idx >= 0) merged[idx] = inc;
+          else merged.push(inc);
+        }
+        line.markets.totals = merged;
       }
     }
   }
