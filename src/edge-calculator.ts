@@ -69,6 +69,19 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
     existingEventExposure,
   } = input;
 
+  // 0. Price floor — skip near-zero tokens (noise / dead markets)
+  if (takerPrice < config.minPrice) {
+    return {
+      grossEdge: sharpProb - takerPrice,
+      fee: 0,
+      netEdge: 0,
+      kellyFraction: 0,
+      suggestedSize: 0,
+      tradeable: false,
+      skipReason: `price_too_low (${takerPrice} < ${config.minPrice})`,
+    };
+  }
+
   // 1. Gross edge — use taker price (ask when buying) for realistic fill
   const grossEdge = sharpProb - takerPrice;
 
