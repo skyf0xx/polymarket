@@ -556,5 +556,24 @@
       "wol": "Wolverhampton Wanderers FC"
     }
   },
-  "h2hCache": {}
+  "h2hCache": {
+    "usa-nba": {
+      "atl:bos": {
+        "Yes": "Boston Celtics",
+        "No": "Atlanta Hawks"
+      },
+      "mia:cle": {
+        "Yes": "Cleveland Cavaliers",
+        "No": "Miami Heat"
+      },
+      "lac:ind": {
+        "Yes": "LA Clippers",
+        "No": "Indiana Pacers"
+      },
+      "sas:mil": {
+        "Yes": "San Antonio Spurs",
+        "No": "Milwaukee Bucks"
+      }
+    }
+  }
 }
