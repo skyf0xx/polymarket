@@ -69,7 +69,7 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
     existingEventExposure,
   } = input;
 
-  // 0. Price floor — skip near-zero tokens (noise / dead markets)
+  // 0a. Price floor — skip near-zero tokens (noise / dead markets)
   if (takerPrice < config.minPrice) {
     return {
       grossEdge: sharpProb - takerPrice,
@@ -79,6 +79,19 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
       suggestedSize: 0,
       tradeable: false,
       skipReason: `price_too_low (${takerPrice} < ${config.minPrice})`,
+    };
+  }
+
+  // 0b. No-liquidity filter — prices near 0.50 mean nobody has traded the market
+  if (Math.abs(takerPrice - 0.5) < config.noLiquidityBand) {
+    return {
+      grossEdge: sharpProb - takerPrice,
+      fee: 0,
+      netEdge: 0,
+      kellyFraction: 0,
+      suggestedSize: 0,
+      tradeable: false,
+      skipReason: `no_liquidity (price ${takerPrice} within ${config.noLiquidityBand} of 0.50)`,
     };
   }
 
