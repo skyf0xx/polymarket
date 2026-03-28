@@ -98,12 +98,22 @@ export async function executeSignal(
     let orderPrice = signal.price;
     const size = signal.size;
 
+    // 2b. Truncate to tick grid and clamp to valid CLOB range [tick, 1 - tick]
+    //     BUY: floor (pay less), SELL: ceil (receive more) — always in our favor
+    const tick = TICK_MAP[tickSize] ?? 0.01;
+    const inv = Math.round(1 / tick); // e.g. 100 for tick 0.01
+    orderPrice = signal.side === "BUY"
+      ? Math.floor(orderPrice * inv) / inv
+      : Math.ceil(orderPrice * inv) / inv;
+    const minPrice = tick;
+    const maxPrice = Math.round((1 - tick) * inv) / inv;
+    orderPrice = Math.max(minPrice, Math.min(maxPrice, orderPrice));
+
     // 3. In maker mode, place limit order at bestBid + 1 tick (top of bid book).
     //    This makes us a maker — we rest on the book and pay zero fees.
     //    Cap at bestAsk - 1 tick to ensure the order doesn't cross the spread.
     if (config.marketMaker && signal.side === "BUY") {
       const obInfo = await getTopOfBook(signal.tokenId);
-      const tick = TICK_MAP[tickSize] ?? 0.01;
       const makerPrice = Math.min(
         obInfo.bestBid + tick,  // one tick above best bid
         obInfo.bestAsk - tick,  // never cross the spread
