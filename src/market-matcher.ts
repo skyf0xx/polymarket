@@ -125,8 +125,15 @@ export class MarketMatcher {
     const now = Date.now();
     const needsLlm: PolymarketMarket[] = [];
     let deterministicCount = 0;
+    let skippedPast = 0;
 
     for (const pm of unmatched) {
+      // Skip markets whose date has already passed — odds events won't exist for them
+      const slugDate = pm.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (slugDate && new Date(slugDate).getTime() + 24 * 60 * 60 * 1_000 < now) {
+        skippedPast++;
+        continue;
+      }
       const det = this.knowledge.tryMatch(pm, oddsEvents, now);
       if (det) {
         const oddsLine = oddsLines.get(det.oddsApiEventId);
@@ -145,6 +152,10 @@ export class MarketMatcher {
         }
       }
       needsLlm.push(pm);
+    }
+
+    if (skippedPast > 0) {
+      log.info(`Skipped ${skippedPast} market(s) with past dates`);
     }
 
     if (deterministicCount > 0) {
