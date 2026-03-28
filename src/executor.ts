@@ -7,6 +7,7 @@ import type { TickSize } from "@polymarket/clob-client";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import type { PendingOrders } from "./pending-orders.js";
+import type { PositionTracker } from "./position-tracker.js"; // type-only: only used for parameter typing
 import type { TradeSignal } from "./types.js";
 
 const TICK_MAP: Record<string, number> = {
@@ -85,6 +86,7 @@ export async function executeSignal(
   client: ClobClient,
   signal: TradeSignal,
   pendingOrders?: PendingOrders,
+  positions?: PositionTracker,
 ): Promise<boolean> {
   const tag = `[${signal.side} ${signal.slug} @ ${signal.price.toFixed(4)}]`;
 
@@ -152,7 +154,11 @@ export async function executeSignal(
 
       return true;
     } else {
-      log.error(`✗ Order failed`, {
+      const errorStr = resp?.status ?? JSON.stringify(resp);
+      const isBalanceError = typeof errorStr === "string" && errorStr.includes("not enough balance");
+      const trackedPosition = signal.side === "SELL" ? positions?.getPosition(signal.tokenId) : undefined;
+
+      log.recordError(`✗ Order failed`, {
         tokenId: signal.tokenId,
         slug: signal.slug,
         side: signal.side,
@@ -161,7 +167,19 @@ export async function executeSignal(
         edge: signal.edge,
         reason: signal.reason,
         success: false,
-        error: resp?.status ?? JSON.stringify(resp),
+        error: errorStr,
+        ...(isBalanceError && signal.side === "SELL" && {
+          debug_balance_error: {
+            tracker_size: trackedPosition?.size ?? null,
+            tracker_avg_price: trackedPosition?.avgPrice ?? null,
+            tracker_total_cost: trackedPosition?.totalCost ?? null,
+            order_size: size,
+            order_price: orderPrice,
+            // raw CLOB amounts: makerAmount = shares * 1e6, takerAmount = USDC * 1e6
+            expected_maker_amount: Math.round(size * 1e6),
+            expected_taker_amount: Math.round(size * orderPrice * 1e6),
+          },
+        }),
       });
       return false;
     }
