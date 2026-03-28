@@ -378,7 +378,7 @@ export class Coordinator {
     }
 
     // Fire and forget — executor handles its own error logging
-    executeSignal(this.client, signal, this.pendingOrders).catch((err) =>
+    executeSignal(this.client, signal, this.pendingOrders, this.positions).catch((err) =>
       log.error(`Executor dispatch error: ${err.message}`),
     );
   }

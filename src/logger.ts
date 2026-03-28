@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import type { LogLevel, LogEntry } from "./types.js";
 
 const LOG_FILE = join(config.dataDir, "trades.jsonl");
+const ERROR_LOG_FILE = join(config.dataDir, "errors.jsonl");
 
 // Ensure data directory exists
 if (!existsSync(config.dataDir)) {
@@ -29,6 +30,14 @@ function writeToFile(entry: LogEntry): void {
   }
 }
 
+function writeErrorToFile(entry: LogEntry): void {
+  try {
+    appendFileSync(ERROR_LOG_FILE, JSON.stringify({ ts: entry.ts, module: entry.module, msg: entry.msg, ...(entry.data ?? {}) }) + "\n");
+  } catch {
+    // Swallow
+  }
+}
+
 function log(
   level: LogLevel,
   module: string,
@@ -46,14 +55,16 @@ function log(
 
   if (level === "error") {
     console.error(formatConsole(entry));
+    if (persist) writeErrorToFile(entry);
   } else if (level === "warn") {
     console.warn(formatConsole(entry));
   } else if (config.verbose) {
     console.log(formatConsole(entry));
   }
 
-  // Persist to JSONL file only in dry-run mode
-  if (persist && config.dryRun) {
+  // Errors always persist to errors.jsonl (handled above in the error branch).
+  // Non-error records persist to trades.jsonl only in dry-run mode.
+  if (persist && level !== "error" && config.dryRun) {
     writeToFile(entry);
   }
 }
@@ -75,5 +86,9 @@ export function createLogger(module: string) {
     /** Log AND persist to trades.jsonl — use for edges, trades, exits. */
     record: (msg: string, data?: Record<string, unknown>) =>
       log("info", module, msg, data, true),
+
+    /** Log error AND always persist to errors.jsonl (regardless of dry-run). */
+    recordError: (msg: string, data?: Record<string, unknown>) =>
+      log("error", module, msg, data, true),
   };
 }
