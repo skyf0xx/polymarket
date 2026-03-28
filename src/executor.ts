@@ -191,6 +191,13 @@ export async function executeSignal(
           },
         }),
       });
+
+      // Stale position → re-hydrate so we stop retrying with wrong size
+      if (isBalanceError && positions) {
+        log.warn(`Balance mismatch — re-hydrating positions`);
+        positions.hydrate().catch(() => {});
+      }
+
       return false;
     }
   } catch (err: unknown) {
