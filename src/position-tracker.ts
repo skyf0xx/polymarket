@@ -55,7 +55,7 @@ export class PositionTracker {
       this.positions.clear();
 
       for (const p of apiPositions) {
-        if (p.size <= 0) continue;
+        if (Math.floor(p.size) <= 0) continue;
 
         // Determine YES/NO side from outcome
         const side: "YES" | "NO" =
