@@ -907,6 +907,26 @@
       "agut:droguet": {
         "Yes": "Bautista Agut, Roberto",
         "No": "Droguet, Titouan"
+      },
+      "basilas:michals": {
+        "Yes": "Basilashvili, Nikoloz",
+        "No": "Michalski, Daniel"
+      },
+      "loffhag:rodiono": {
+        "Yes": "Loffhagen, George",
+        "No": "Rodionov, Jurij"
+      },
+      "harris:molcan": {
+        "Yes": "Harris, Billy",
+        "No": "Molcan, Alex"
+      },
+      "haita:schwaer": {
+        "Yes": "Haita, Stefan Horia",
+        "No": "Schwaerzler, Joel"
+      },
+      "ghetu:clarke": {
+        "Yes": "Ghetu, Gabriel",
+        "No": "Clarke, Jay"
       }
     },
     "challenger-atp-challenger-miyazaki-japan-men-singles": {
@@ -939,6 +959,10 @@
       "vukic:baadi": {
         "Yes": "Vukic, Aleksandar",
         "No": "Baadi, Taha"
+      },
+      "buse:berrett": {
+        "Yes": "Buse, Ignacio",
+        "No": "Berrettini, Matteo"
       }
     }
   }
