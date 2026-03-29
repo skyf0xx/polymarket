@@ -426,7 +426,11 @@
       "silva": "Daniel Dutra da Silva",
       "augeral": "Felix Auger-Aliassime",
       "pellegr": "Andrea Pellegrino",
-      "goffin": "David Goffin"
+      "goffin": "David Goffin",
+      "velasco": "Iker Velasco",
+      "varona": "Nicolas Alvarez Varona",
+      "fenty": "Andrew Fenty",
+      "artnak": "Bor Artnak"
     },
     "wta": {
       "sabalen": "Aryna Sabalenka",
@@ -597,6 +601,38 @@
       "nyk:okc": {
         "Yes": "Oklahoma City Thunder",
         "No": "New York Knicks"
+      },
+      "lac:mil": {
+        "Yes": "LA Clippers",
+        "No": "Milwaukee Bucks"
+      },
+      "sac:bkn": {
+        "Yes": "Sacramento Kings",
+        "No": "Brooklyn Nets"
+      },
+      "bos:cha": {
+        "Yes": "Boston Celtics",
+        "No": "Charlotte Hornets"
+      },
+      "was:por": {
+        "Yes": "Washington Wizards",
+        "No": "Portland Trail Blazers"
+      },
+      "hou:nop": {
+        "Yes": "Houston Rockets",
+        "No": "New Orleans Pelicans"
+      },
+      "gsw:den": {
+        "Yes": "Golden State Warriors",
+        "No": "Denver Nuggets"
+      },
+      "orl:tor": {
+        "Yes": "Orlando Magic",
+        "No": "Toronto Raptors"
+      },
+      "mia:ind": {
+        "Yes": "Miami Heat",
+        "No": "Indiana Pacers"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
@@ -643,6 +679,10 @@
       "faria:dellien": {
         "Yes": "Faria, Jaime",
         "No": "Dellien, Hugo"
+      },
+      "faria:burruch": {
+        "Yes": "Faria, Jaime",
+        "No": "Burruchaga, Roman Andres"
       }
     },
     "wta-wta-charleston-usa-women-singles": {
@@ -689,6 +729,66 @@
       "giavara:day": {
         "Yes": "Giavara, Haley",
         "No": "Day, Kayla"
+      },
+      "akli:tomova": {
+        "Yes": "Akli, Ayana",
+        "No": "Tomova, Viktoriya"
+      },
+      "vekic:gorgodz": {
+        "Yes": "Vekic, Donna",
+        "No": "Gorgodze, Ekaterine"
+      },
+      "kuderme:vedder": {
+        "Yes": "Kudermetova, Polina",
+        "No": "Vedder, Eva"
+      },
+      "kalieva:urhobo": {
+        "Yes": "Kalieva, Elvina",
+        "No": "Urhobo, Akasha"
+      },
+      "yuan:day": {
+        "Yes": "Yuan, Yue",
+        "No": "Day, Kayla"
+      },
+      "vidmano:stoiana": {
+        "Yes": "Darja Vidmanova",
+        "No": "Mary Stoiana"
+      },
+      "putints:sun": {
+        "Yes": "Yulia Putintseva",
+        "No": "Lulu Sun"
+      },
+      "sherif:stearns": {
+        "Yes": "Mayar Sherif",
+        "No": "Peyton Stearns"
+      },
+      "lys:volynet": {
+        "Yes": "Eva Lys",
+        "No": "Katie Volynets"
+      },
+      "krueger:mcnally": {
+        "Yes": "Ashlyn Krueger",
+        "No": "Caty McNally"
+      },
+      "linette:kessler": {
+        "Yes": "Magda Linette",
+        "No": "McCartney Kessler"
+      },
+      "stephen:zarazua": {
+        "Yes": "Sloane Stephens",
+        "No": "Renata Zarazua"
+      },
+      "andrees:galfi": {
+        "Yes": "Andreescu, Bianca",
+        "No": "Galfi, Dalma"
+      },
+      "zakharo:yastrem": {
+        "Yes": "Zakharova, Anastasia",
+        "No": "Yastremska, Dayana"
+      },
+      "zhang:starodu": {
+        "Yes": "Shuai Zhang",
+        "No": "Yulia Starodubtseva"
       }
     },
     "usa-mlb": {
@@ -827,6 +927,22 @@
       "burruch:walton": {
         "Yes": "Burruchaga, Roman Andres",
         "No": "Walton, Adam"
+      },
+      "jones:blanc": {
+        "Yes": "Pinnington Jones, Jack",
+        "No": "Blanch, Darwin"
+      },
+      "gomez:tabur": {
+        "Yes": "Gomez, Federico Agustin",
+        "No": "Tabur, Clement"
+      },
+      "draxl:galarne": {
+        "Yes": "Draxl, Liam",
+        "No": "Galarneau, Alexis"
+      },
+      "bolt:andrade": {
+        "Yes": "Bolt, Alex",
+        "No": "Andrade, Andres"
       }
     },
     "challenger-atp-challenger-morelia-mexico-men-singles": {
@@ -879,6 +995,66 @@
       "escorih:higuita": {
         "Yes": "Burillo Escorihuela, Irene",
         "No": "Higuita Barraza, Mariana Isabel"
+      },
+      "sanchez:oktiabr": {
+        "Yes": "Sanchez, Ana Sofia",
+        "No": "Oktiabreva, Alisa"
+      },
+      "mandlik:pareja": {
+        "Yes": "Mandlik, Elizabeth",
+        "No": "Pareja, Julieta"
+      },
+      "udvardy:torres": {
+        "Yes": "Udvardy, Panna",
+        "No": "Torres Murcia, Maria Camila"
+      },
+      "mediorr:maria": {
+        "Yes": "Mediorreal Arias, Valentina",
+        "No": "Maria, Tatjana"
+      },
+      "monnet:kawa": {
+        "Yes": "Carole Monnet",
+        "No": "Katarzyna Kawa"
+      },
+      "zavatsk:janicij": {
+        "Yes": "Katarina Zavatska",
+        "No": "Selena Janicijevic"
+      },
+      "osorio:dolehid": {
+        "Yes": "Osorio, Camila",
+        "No": "Dolehide, Caroline"
+      },
+      "montgom:blinkov": {
+        "Yes": "Montgomery, Robin",
+        "No": "Blinkova, Anna"
+      },
+      "arango:carle": {
+        "Yes": "Arango, Emiliana",
+        "No": "Carle, Maria"
+      },
+      "rakotom:maneiro": {
+        "Yes": "Rakotomanga Rajaonah, Tiantsoa Sarah",
+        "No": "Bouzas Maneiro, Jessica"
+      },
+      "ribera:tikhono": {
+        "Yes": "Bassols Ribera, Marina",
+        "No": "Tikhonova, Anastasia"
+      },
+      "jones:marista": {
+        "Yes": "Jones, Francesca",
+        "No": "Maristany Zuleta de Reales, Guiomar"
+      },
+      "tona:karatan": {
+        "Yes": "Tona, Miriana",
+        "No": "Karatancheva, Lia"
+      },
+      "ortenzi:avanesy": {
+        "Yes": "Ortenzi, Jazmin",
+        "No": "Avanesyan, Elina"
+      },
+      "escorih:werner": {
+        "Yes": "Burillo Escorihuela, Irene",
+        "No": "Werner, Caroline"
       }
     },
     "atp-atp-miami-usa-men-singles": {
@@ -927,6 +1103,14 @@
       "ghetu:clarke": {
         "Yes": "Ghetu, Gabriel",
         "No": "Clarke, Jay"
+      },
+      "kuzmano:travagl": {
+        "Yes": "Kuzmanov, Dimitar",
+        "No": "Travaglia, Stefano"
+      },
+      "aguilar:purtsel": {
+        "Yes": "Merida, Daniel",
+        "No": "Purtseladze, Saba"
       }
     },
     "challenger-atp-challenger-miyazaki-japan-men-singles": {
@@ -941,6 +1125,18 @@
       "zhou:uchiyam": {
         "Yes": "Zhou, Yi",
         "No": "Uchiyama, Yasutaka"
+      },
+      "ellis:honda": {
+        "Yes": "Ellis, Blake",
+        "No": "Honda, Naoya"
+      },
+      "jon:su": {
+        "Yes": "Jones, Maximus",
+        "No": "Sun, Fajing"
+      },
+      "broady:uchida": {
+        "Yes": "Broady, Liam",
+        "No": "Uchida, Kaichi"
       }
     },
     "atp-atp-marrakech-morocco-men-singles": {
@@ -963,6 +1159,96 @@
       "buse:berrett": {
         "Yes": "Buse, Ignacio",
         "No": "Berrettini, Matteo"
+      },
+      "assche:gaston": {
+        "Yes": "Van Assche, Luca",
+        "No": "Gaston, Hugo"
+      },
+      "cina:muller": {
+        "Yes": "Cina, Federico",
+        "No": "Muller, Alexandre"
+      },
+      "cerund:majchrz": {
+        "Yes": "Cerundolo, Juan Manuel",
+        "No": "Majchrzak, Kamil"
+      },
+      "pellegr:skatov": {
+        "Yes": "Andrea Pellegrino",
+        "No": "Timofey Skatov"
+      },
+      "trungel:barton": {
+        "Yes": "Marco Trungelliti",
+        "No": "Hynek Barton"
+      },
+      "jamji:sakamot": {
+        "Yes": "Amine Jamji",
+        "No": "Rei Sakamoto"
+      },
+      "lajovic:grenier": {
+        "Yes": "Lajovic, Dusan",
+        "No": "Grenier, Hugo"
+      },
+      "herbert:harri": {
+        "Yes": "Herbert, Pierre-Hugues",
+        "No": "Harris, Lloyd"
+      },
+      "laarous:echargu": {
+        "Yes": "Younes Lalami Laaroussi",
+        "No": "Moez Echargui"
+      },
+      "rocha:sanchis": {
+        "Yes": "Henrique Rocha",
+        "No": "David Jorda Sanchis"
+      },
+      "ivashka:kjaer": {
+        "Yes": "Ilya Ivashka",
+        "No": "Nicolai Budkov Kjaer"
+      },
+      "kopriva:medjedo": {
+        "Yes": "Kopriva, Vit",
+        "No": "Medjedovic, Hamad"
+      }
+    },
+    "challenger-atp-challenger-barletta-italy-men-singles": {
+      "svrcina:berret": {
+        "Yes": "Svrcina, Dalibor",
+        "No": "Berrettini, Jacopo"
+      },
+      "fatic:bondiol": {
+        "Yes": "Fatic, Nerman",
+        "No": "Bondioli, Federico"
+      },
+      "gill:cadenas": {
+        "Yes": "Gill, Felix",
+        "No": "Cadenasso, Gianluca"
+      },
+      "glinka:kukushk": {
+        "Yes": "Daniil Glinka",
+        "No": "Mikhail Kukushkin"
+      },
+      "cecchin:romano": {
+        "Yes": "Marco Cecchinato",
+        "No": "Filippo Romano"
+      },
+      "nagal:samuel": {
+        "Yes": "Nagal, Sumit",
+        "No": "Samuel, Toby"
+      }
+    },
+    "challenger-atp-challenger-menorca-spain-men-singles": {
+      "izquier:tiffon": {
+        "Yes": "Nikolas Sanchez Izquierdo",
+        "No": "Pol Martin Tiffon"
+      },
+      "gombos:gakhov": {
+        "Yes": "Norbert Gombos",
+        "No": "Ivan Gakhov"
+      }
+    },
+    "challenger-atp-challenger-san-luis-potosi-mexico-men-singles": {
+      "napolit:mena": {
+        "Yes": "Stefano Napolitano",
+        "No": "Facundo Mena"
       }
     }
   }
