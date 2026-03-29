@@ -104,7 +104,7 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
   // 3. Net edge
   const netEdge = grossEdge - fee;
 
-  // 4. Minimum edge filter
+  // 4. Edge range filter
   if (netEdge < config.minEdge) {
     return {
       grossEdge,
@@ -117,6 +117,17 @@ export function computeEdge(input: ComputeEdgeInput): EdgeResult {
         netEdge <= 0
           ? "no_edge"
           : `edge_too_small (${(netEdge * 100).toFixed(2)}% < ${(config.minEdge * 100).toFixed(0)}%)`,
+    };
+  }
+  if (netEdge > config.maxEdge) {
+    return {
+      grossEdge,
+      fee,
+      netEdge,
+      kellyFraction: 0,
+      suggestedSize: 0,
+      tradeable: false,
+      skipReason: `edge_too_large (${(netEdge * 100).toFixed(2)}% > ${(config.maxEdge * 100).toFixed(0)}%) — likely bad match or stale odds`,
     };
   }
 
