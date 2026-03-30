@@ -13,6 +13,7 @@ import {
 } from "./market-matcher.js";
 import { PositionTracker } from "./position-tracker.js";
 import { PendingOrders } from "./pending-orders.js";
+import { PendingSignals } from "./pending-signals.js";
 import { Coordinator } from "./coordinator.js";
 import { UserStream } from "./user-stream.js";
 import { getUsdcBalance } from "./wallet.js";
@@ -123,7 +124,8 @@ async function main(): Promise<void> {
   const matcher = new MarketMatcher();
   const positions = new PositionTracker();
   const pendingOrders = new PendingOrders();
-  const coordinator = new Coordinator(client, odds, prices, matcher, positions, pendingOrders, bankroll);
+  const pendingSignals = new PendingSignals();
+  const coordinator = new Coordinator(client, odds, prices, matcher, positions, pendingOrders, pendingSignals, bankroll);
 
   // 4. Fetch Polymarket sports markets from Gamma
   log.info("Fetching active sports markets from Gamma...");
@@ -159,7 +161,7 @@ async function main(): Promise<void> {
   coordinator.start();
 
   // 11. Start user stream (authenticated WS for trade confirmations)
-  const userStream = new UserStream(positions, pendingOrders, matcher, config.credsFile);
+  const userStream = new UserStream(positions, pendingOrders, pendingSignals, matcher, config.credsFile);
   userStream.start();
 
   // 12. Health logging
