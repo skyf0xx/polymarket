@@ -841,6 +841,18 @@
       "kalieva:kessler": {
         "Yes": "Kalieva, Elvina",
         "No": "Kessler, McCartney"
+      },
+      "parks:stoiana": {
+        "Yes": "Parks, Alycia",
+        "No": "Stoiana, Mary"
+      },
+      "day:badosa": {
+        "Yes": "Day, Kayla",
+        "No": "Badosa, Paula"
+      },
+      "kuderme:oliynyk": {
+        "Yes": "Kudermetova, Polina",
+        "No": "Oliynykova, Oleksandra"
       }
     },
     "usa-mlb": {
@@ -1055,6 +1067,14 @@
       "bolt:andrade": {
         "Yes": "Bolt, Alex",
         "No": "Andrade, Andres"
+      },
+      "jones:zhang": {
+        "Yes": "Pinnington Jones, Jack",
+        "No": "Zhang, Zhizhen"
+      },
+      "bolt:wu": {
+        "Yes": "Bolt, Alex",
+        "No": "Wu, Yibing"
       }
     },
     "challenger-atp-challenger-morelia-mexico-men-singles": {
@@ -1167,6 +1187,10 @@
       "escorih:werner": {
         "Yes": "Burillo Escorihuela, Irene",
         "No": "Werner, Caroline"
+      },
+      "karatan:lepchen": {
+        "Yes": "Karatancheva, Lia",
+        "No": "Lepchenko, Varvara"
       }
     },
     "atp-atp-miami-usa-men-singles": {
@@ -1253,6 +1277,18 @@
       "broady:uchida": {
         "Yes": "Broady, Liam",
         "No": "Uchida, Kaichi"
+      },
+      "overbec:milic": {
+        "Yes": "Overbeck, Carl Emil",
+        "No": "Milic, Ognjen"
+      },
+      "wendelk:boulais": {
+        "Yes": "Wendelken, Harry",
+        "No": "Boulais, Justin"
+      },
+      "jasika:tu": {
+        "Yes": "Jasika, Omar",
+        "No": "Tu, Li"
       }
     },
     "atp-atp-marrakech-morocco-men-singles": {
@@ -1339,6 +1375,18 @@
       "rocha:kjaer": {
         "Yes": "Rocha, Henrique",
         "No": "Budkov Kjaer, Nicolai"
+      },
+      "rocha:trungel": {
+        "Yes": "Rocha, Henrique",
+        "No": "Trungelliti, Marco"
+      },
+      "jodar:lajovic": {
+        "Yes": "Jodar, Rafael",
+        "No": "Lajovic, Dusan"
+      },
+      "skatov:carabel": {
+        "Yes": "Skatov, Timofey",
+        "No": "Ugo Carabelli, Camilo"
       }
     },
     "challenger-atp-challenger-barletta-italy-men-singles": {
@@ -1373,6 +1421,10 @@
       "bertola:gentzsc": {
         "Yes": "Bertola, Remy",
         "No": "Gentzsch, Tom"
+      },
+      "mrva:krumich": {
+        "Yes": "Mrva, Maxim",
+        "No": "Krumich, Martin"
       }
     },
     "challenger-atp-challenger-menorca-spain-men-singles": {
@@ -1405,6 +1457,10 @@
       "hernand:mejia": {
         "Yes": "Alex Hernandez",
         "No": "Nicolas Mejia"
+      },
+      "catry:zhukaye": {
+        "Yes": "Catry, Robin",
+        "No": "Zhukayev, Beibit"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
