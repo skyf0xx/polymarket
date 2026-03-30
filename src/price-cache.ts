@@ -155,7 +155,7 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
 
     this.ws.on("message", (raw: WebSocket.Data) => {
       const text = raw.toString();
-      if (text === "PONG") return;
+      if (text === "PONG" || text === "INVALID OPERATION") return;
       try {
         const parsed = JSON.parse(text);
         // Polymarket WS wraps messages in an array: [{event_type: "book", ...}]
