@@ -821,6 +821,10 @@
       "zhang:starodu": {
         "Yes": "Shuai Zhang",
         "No": "Yulia Starodubtseva"
+      },
+      "tomova:brady": {
+        "Yes": "Tomova, Viktoriya",
+        "No": "Brady, Jennifer"
       }
     },
     "usa-mlb": {
@@ -1311,6 +1315,10 @@
       "trungel:sakamot": {
         "Yes": "Trungelliti, Marco",
         "No": "Sakamoto, Rei"
+      },
+      "rocha:kjaer": {
+        "Yes": "Rocha, Henrique",
+        "No": "Budkov Kjaer, Nicolai"
       }
     },
     "challenger-atp-challenger-barletta-italy-men-singles": {
@@ -1371,6 +1379,10 @@
       "heide:dias": {
         "Yes": "Heide, Gustavo",
         "No": "Boscardin Dias, Pedro"
+      },
+      "barrios:dellie": {
+        "Yes": "Barrios Vera, Marcelo Tomas",
+        "No": "Dellien, Murkel"
       }
     }
   }
