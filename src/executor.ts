@@ -109,21 +109,33 @@ export async function executeSignal(
     const maxPrice = Math.round((1 - tick) * inv) / inv;
     orderPrice = Math.max(minPrice, Math.min(maxPrice, orderPrice));
 
-    // 3. In maker mode, place limit order at bestBid + 1 tick (top of bid book).
-    //    This makes us a maker — we rest on the book and pay zero fees.
-    //    Cap at bestAsk - 1 tick to ensure the order doesn't cross the spread.
-    if (config.marketMaker && signal.side === "BUY") {
+    // 3. For BUY orders, fetch the live order book and cap the price below best ask
+    //    to avoid "crosses the book" rejections (market may have moved since edge detection).
+    //    In maker mode, additionally push price down to bestBid + 1 tick.
+    if (signal.side === "BUY") {
       const obInfo = await getTopOfBook(signal.tokenId);
-      const makerPrice = Math.min(
-        obInfo.bestBid + tick,  // one tick above best bid
-        obInfo.bestAsk - tick,  // never cross the spread
-      );
-      if (makerPrice > 0 && makerPrice < 1) {
-        orderPrice = Math.min(signal.price, makerPrice);
+      const safeMax = obInfo.bestAsk > tick ? obInfo.bestAsk - tick : obInfo.bestAsk;
+
+      if (config.marketMaker) {
+        const makerPrice = Math.min(
+          obInfo.bestBid + tick,  // one tick above best bid
+          safeMax,                // never cross the spread
+        );
+        if (makerPrice > 0 && makerPrice < 1) {
+          orderPrice = Math.min(orderPrice, makerPrice);
+        }
+        log.info(
+          `MAKER ${tag} bid=${obInfo.bestBid} ask=${obInfo.bestAsk} → order_price=${orderPrice.toFixed(4)}`,
+        );
+      } else {
+        // Taker mode: cap at bestAsk - 1 tick so we don't cross the book
+        if (obInfo.bestAsk > 0 && orderPrice >= obInfo.bestAsk) {
+          log.info(
+            `TAKER ${tag} ask=${obInfo.bestAsk} — capping order_price from ${orderPrice.toFixed(4)} to ${safeMax.toFixed(4)}`,
+          );
+          orderPrice = safeMax;
+        }
       }
-      log.info(
-        `MAKER ${tag} bid=${obInfo.bestBid} ask=${obInfo.bestAsk} → order_price=${orderPrice.toFixed(4)}`,
-      );
     }
 
     const isSell = signal.side === "SELL";
