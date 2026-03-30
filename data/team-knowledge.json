@@ -633,6 +633,38 @@
       "mia:ind": {
         "Yes": "Miami Heat",
         "No": "Indiana Pacers"
+      },
+      "phi:mia": {
+        "Yes": "Philadelphia 76ers",
+        "No": "Miami Heat"
+      },
+      "bos:atl": {
+        "Yes": "Boston Celtics",
+        "No": "Atlanta Hawks"
+      },
+      "chi:sas": {
+        "Yes": "Chicago Bulls",
+        "No": "San Antonio Spurs"
+      },
+      "min:dal": {
+        "Yes": "Minnesota Timberwolves",
+        "No": "Dallas Mavericks"
+      },
+      "cle:uta": {
+        "Yes": "Cleveland Cavaliers",
+        "No": "Utah Jazz"
+      },
+      "det:okc": {
+        "Yes": "Detroit Pistons",
+        "No": "Oklahoma City Thunder"
+      },
+      "was:lal": {
+        "Yes": "Washington Wizards",
+        "No": "Los Angeles Lakers"
+      },
+      "phx:mem": {
+        "Yes": "Phoenix Suns",
+        "No": "Memphis Grizzlies"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
@@ -851,6 +883,66 @@
       "cws:mil": {
         "Yes": "Chicago White Sox",
         "No": "Milwaukee Brewers"
+      },
+      "min:kc": {
+        "Yes": "Minnesota Twins",
+        "No": "Kansas City Royals"
+      },
+      "tex:bal": {
+        "Yes": "Texas Rangers",
+        "No": "Baltimore Orioles"
+      },
+      "pit:cin": {
+        "Yes": "Pittsburgh Pirates",
+        "No": "Cincinnati Reds"
+      },
+      "cws:mia": {
+        "Yes": "Chicago White Sox",
+        "No": "Miami Marlins"
+      },
+      "wsh:phi": {
+        "Yes": "Washington Nationals",
+        "No": "Philadelphia Phillies"
+      },
+      "col:tor": {
+        "Yes": "Colorado Rockies",
+        "No": "Toronto Blue Jays"
+      },
+      "oak:atl": {
+        "Yes": "Athletics",
+        "No": "Atlanta Braves"
+      },
+      "laa:chc": {
+        "Yes": "Los Angeles Angels",
+        "No": "Chicago Cubs"
+      },
+      "tb:mil": {
+        "Yes": "Tampa Bay Rays",
+        "No": "Milwaukee Brewers"
+      },
+      "nym:stl": {
+        "Yes": "New York Mets",
+        "No": "St. Louis Cardinals"
+      },
+      "bos:hou": {
+        "Yes": "Boston Red Sox",
+        "No": "Houston Astros"
+      },
+      "nyy:sea": {
+        "Yes": "New York Yankees",
+        "No": "Seattle Mariners"
+      },
+      "det:ari": {
+        "Yes": "Detroit Tigers",
+        "No": "Arizona Diamondbacks"
+      },
+      "sf:sd": {
+        "Yes": "San Francisco Giants",
+        "No": "San Diego Padres"
+      },
+      "cle:lad": {
+        "Yes": "Cleveland Guardians",
+        "No": "Los Angeles Dodgers"
       }
     },
     "challenger-atp-challenger-yokkaichi-japan-men-singles": {
@@ -1275,6 +1367,10 @@
       "ribeiro:dellien": {
         "Yes": "Ribeiro, Eduardo",
         "No": "Dellien, Hugo"
+      },
+      "heide:dias": {
+        "Yes": "Heide, Gustavo",
+        "No": "Boscardin Dias, Pedro"
       }
     }
   }
