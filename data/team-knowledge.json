@@ -825,6 +825,22 @@
       "tomova:brady": {
         "Yes": "Tomova, Viktoriya",
         "No": "Brady, Jennifer"
+      },
+      "tomljan:vekic": {
+        "Yes": "Tomljanovic, Ajla",
+        "No": "Vekic, Donna"
+      },
+      "vidmano:bondar": {
+        "Yes": "Vidmanova, Darja",
+        "No": "Bondar, Anna"
+      },
+      "sierra:urhobo": {
+        "Yes": "Sierra, Solana",
+        "No": "Urhobo, Akasha"
+      },
+      "kalieva:kessler": {
+        "Yes": "Kalieva, Elvina",
+        "No": "Kessler, McCartney"
       }
     },
     "usa-mlb": {
@@ -1207,6 +1223,10 @@
       "aguilar:purtsel": {
         "Yes": "Merida, Daniel",
         "No": "Purtseladze, Saba"
+      },
+      "oconnel:navone": {
+        "Yes": "O'Connell, Christopher",
+        "No": "Navone, Mariano"
       }
     },
     "challenger-atp-challenger-miyazaki-japan-men-singles": {
@@ -1349,6 +1369,10 @@
       "ajdukov:neumaye": {
         "Yes": "Ajdukovic, Duje",
         "No": "Neumayer, Lukas"
+      },
+      "bertola:gentzsc": {
+        "Yes": "Bertola, Remy",
+        "No": "Gentzsch, Tom"
       }
     },
     "challenger-atp-challenger-menorca-spain-men-singles": {
@@ -1365,6 +1389,22 @@
       "napolit:mena": {
         "Yes": "Stefano Napolitano",
         "No": "Facundo Mena"
+      },
+      "soto:orlov": {
+        "Yes": "Soto, Matias",
+        "No": "Orlov, Vladyslav"
+      },
+      "fenty:pavlovi": {
+        "Yes": "Andrew Fenty",
+        "No": "Luka Pavlovic"
+      },
+      "kozlov:magadan": {
+        "Yes": "Stefan Kozlov",
+        "No": "Alan Magadan"
+      },
+      "hernand:mejia": {
+        "Yes": "Alex Hernandez",
+        "No": "Nicolas Mejia"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
@@ -1383,6 +1423,22 @@
       "barrios:dellie": {
         "Yes": "Barrios Vera, Marcelo Tomas",
         "No": "Dellien, Murkel"
+      },
+      "santos:bueno": {
+        "Yes": "Saraiva Dos Santos, Paulo Andre",
+        "No": "Bueno, Gonzalo"
+      },
+      "alves:aguil": {
+        "Yes": "Meligeni Alves, Felipe",
+        "No": "Aguilar Cardozo, Joaquin"
+      },
+      "midon:fernand": {
+        "Yes": "Midon, Lautaro",
+        "No": "Fernandez, Bruno"
+      },
+      "villanu:aboian": {
+        "Yes": "Villanueva, Gonzalo",
+        "No": "Aboian, Valerio"
       }
     }
   }
