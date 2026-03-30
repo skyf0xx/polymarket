@@ -213,6 +213,16 @@ function analyze(trades: AnalyzedTrade[]): void {
   // ── By Market Type ──
   printBreakdown("By Market Type", resolved, (t) => t.entry.marketType);
 
+  // ── By Price Tier ──
+  // Longshots (low price) behave very differently from favorites — reveals systematic bias
+  printBreakdown("By Price Tier", resolved, (t) => {
+    const p = t.entry.price;
+    if (p < 0.30) return "0-30% (long)";
+    if (p < 0.50) return "30-50% (dog)";
+    if (p < 0.70) return "50-70% (fav)";
+    return "70%+ (heavy)";
+  });
+
   // ── Edge Calibration ──
   // Are our edge estimates predictive? Group by edge bucket, compare expected vs actual win rate
   console.log("=== Edge Calibration ===");
@@ -224,6 +234,7 @@ function analyze(trades: AnalyzedTrade[]): void {
     rpad("AvgEdge", 9),
     rpad("AvgPrice", 10),
     rpad("ExpWR", 8),
+    rpad("CalGap", 9),
     rpad("PnL", 10),
   );
 
@@ -245,6 +256,11 @@ function analyze(trades: AnalyzedTrade[]): void {
     const avgPrice = avg(group.map((t) => t.entry.price));
     // Expected win rate = sharp probability (what we thought)
     const expWR = avg(group.map((t) => t.entry.sharpProb));
+    const actualWR = w / group.length;
+    // Calibration gap: positive = we're winning more than expected (sharp line was conservative)
+    //                  negative = we're losing more than expected (sharp line was too generous)
+    const calGap = actualWR - expWR;
+    const calGapStr = (calGap >= 0 ? "+" : "") + (calGap * 100).toFixed(1) + "%";
     const pnl = group.reduce((s, t) => s + (t.pnl ?? 0), 0);
 
     console.log(
@@ -255,6 +271,7 @@ function analyze(trades: AnalyzedTrade[]): void {
       rpad(avgEdge.toFixed(1) + "%", 9),
       rpad(avgPrice.toFixed(3), 10),
       rpad((expWR * 100).toFixed(1) + "%", 8),
+      rpad(calGapStr, 9),
       rpad(usd(pnl), 10),
     );
   }
@@ -451,7 +468,7 @@ async function main() {
   for (const [slug, positions] of closedBySlug) {
     const totalPnl = positions.reduce((s, p) => s + p.realizedPnl, 0);
     pnlBySlug.set(slug, totalPnl);
-    wonBySlug.set(slug, totalPnl > 0);
+    wonBySlug.set(slug, totalPnl >= 0);
   }
 
   // Join entries with closed positions
