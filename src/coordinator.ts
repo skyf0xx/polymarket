@@ -20,9 +20,9 @@ import {
 } from "./edge-calculator.js";
 import { PositionTracker } from "./position-tracker.js";
 import { PendingOrders } from "./pending-orders.js";
+import { PendingSignals } from "./pending-signals.js";
 import { executeSignal } from "./executor.js";
 import { getUsdcBalance } from "./wallet.js";
-import { appendBuyEntry } from "./entry-logger.js";
 import { looseNameMatch } from "./team-knowledge.js";
 import type {
   SharpLine,
@@ -40,6 +40,7 @@ export class Coordinator {
   private matcher: MarketMatcher;
   private positions: PositionTracker;
   private pendingOrders: PendingOrders;
+  private pendingSignals: PendingSignals;
 
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
   private destroyed = false;
@@ -59,6 +60,7 @@ export class Coordinator {
     matcher: MarketMatcher,
     positions: PositionTracker,
     pendingOrders: PendingOrders,
+    pendingSignals: PendingSignals,
     initialBankroll: number,
   ) {
     this.client = client;
@@ -67,6 +69,7 @@ export class Coordinator {
     this.matcher = matcher;
     this.positions = positions;
     this.pendingOrders = pendingOrders;
+    this.pendingSignals = pendingSignals;
     this._bankroll = initialBankroll;
   }
 
@@ -261,17 +264,15 @@ export class Coordinator {
 
       markSignaled(tokenId);
 
-      // Persist to entries.jsonl for manual review
-      appendBuyEntry(
+      // Stash signal metadata — entry will be logged on confirmed fill (user-stream)
+      this.pendingSignals.store(tokenId, {
         tokenSide,
         match,
         line,
-        fillPrice,
         sharpProb,
-        result.netEdge,
-        result.kellyFraction,
-        size,
-      );
+        netEdge: result.netEdge,
+        kellyFraction: result.kellyFraction,
+      });
 
       this.dispatchSignal(signal);
     } catch (err: unknown) {
@@ -430,6 +431,9 @@ export class Coordinator {
 
       // 7. Prune expired pending orders (GTD 5-min TTL)
       this.pendingOrders.pruneExpired();
+
+      // 8. Prune expired pending signals (unfilled GTD orders)
+      this.pendingSignals.pruneExpired();
 
       log.info(
         `Maintenance complete: odds=${this.odds.size} events, prices=${this.prices.size} tokens, matches=${this.matcher.size}, positions=${this.positions.size}, pending=${this.pendingOrders.size}`,

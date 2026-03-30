@@ -9,7 +9,9 @@ import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import { PositionTracker } from "./position-tracker.js";
 import { PendingOrders } from "./pending-orders.js";
+import { PendingSignals } from "./pending-signals.js";
 import { MarketMatcher } from "./market-matcher.js";
+import { appendBuyEntry } from "./entry-logger.js";
 
 const log = createLogger("user-stream");
 const PING_INTERVAL_MS = 10_000;
@@ -48,6 +50,7 @@ export class UserStream {
   constructor(
     private readonly positions: PositionTracker,
     private readonly pendingOrders: PendingOrders,
+    private readonly pendingSignals: PendingSignals,
     private readonly matcher: MarketMatcher,
     credsFile: string,
   ) {
@@ -222,6 +225,23 @@ export class UserStream {
       // Clear all pending orders for this token — the filled notional is now
       // tracked as a real position. The next edge check will re-evaluate.
       this.pendingOrders.removeByToken(tokenId);
+
+      // Log confirmed fill to entries.jsonl (uses signal-time metadata)
+      const meta = this.pendingSignals.consume(tokenId);
+      if (meta) {
+        appendBuyEntry(
+          meta.tokenSide,
+          meta.match,
+          meta.line,
+          price,   // actual fill price, not signal-time estimate
+          meta.sharpProb,
+          meta.netEdge,
+          meta.kellyFraction,
+          size,    // actual filled size
+        );
+      } else {
+        log.warn(`BUY fill for ${tokenId} has no pending signal metadata — entry not logged`);
+      }
     } else {
       this.positions.recordSell(tokenId, price, size);
     }
