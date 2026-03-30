@@ -252,7 +252,7 @@ export class MarketMatcher {
               const slugMs = new Date(slugDate).getTime();
               const oddsMs = new Date(oddsDate).getTime();
               const dayDiff = Math.abs(slugMs - oddsMs) / (24 * 60 * 60 * 1000);
-              if (dayDiff > 1) {
+              if (dayDiff > 2) {
                 log.warn(
                   `Skipping match ${match.slug} ↔ ${match.oddsApiEventId}: date mismatch (slug=${slugDate}, odds=${oddsDate}, diff=${dayDiff.toFixed(1)}d)`,
                 );
