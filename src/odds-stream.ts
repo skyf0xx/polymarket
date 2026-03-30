@@ -29,6 +29,7 @@ const PING_INTERVAL_MS = 10_000;
 
 export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private cache = new Map<string, SharpLine>();
+  private deadEvents = new Set<string>();
   private ws: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempt = 0;
@@ -140,7 +141,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
           this.mergeWsMarkets(existing, msg.markets);
           this.emit("odds_update", msg.id, existing);
           log.debug(`${msg.type}: updated markets for event ${msg.id}`);
-        } else {
+        } else if (!this.deadEvents.has(msg.id)) {
           // Event not in cache — fetch full details (team names, sport, etc.) from REST
           const line = await this.fetchEventOdds(msg.id);
           if (line) {
@@ -158,6 +159,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
 
       case "deleted":
         this.cache.delete(msg.id);
+        this.deadEvents.delete(msg.id);
         log.debug(`Deleted event ${msg.id}`);
         break;
 
@@ -257,9 +259,14 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
       const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        log.error(
-          `fetchEventOdds failed for ${eventId}: HTTP ${res.status} ${res.statusText} — ${body}`,
-        );
+        if (res.status === 404) {
+          this.deadEvents.add(eventId);
+          log.debug(`fetchEventOdds: event ${eventId} not found (404), suppressing future fetches`);
+        } else {
+          log.error(
+            `fetchEventOdds failed for ${eventId}: HTTP ${res.status} ${res.statusText} — ${body}`,
+          );
+        }
         return null;
       }
 
