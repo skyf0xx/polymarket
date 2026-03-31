@@ -24,8 +24,9 @@ function expectedFee(price: number): number {
 
 describe('computeEdge', () => {
   it('returns tradeable=true for a clear edge: sharpProb=0.65, takerPrice=0.50', () => {
-    const takerPrice = 0.50
-    const sharpProb = 0.65
+    // Use takerPrice outside the noLiquidityBand (|price - 0.5| >= 0.02)
+    const takerPrice = 0.52
+    const sharpProb = 0.67
     const bankroll = 1000
 
     const result = computeEdge({
@@ -57,13 +58,14 @@ describe('computeEdge', () => {
   })
 
   it('returns tradeable=false when netEdge is below minEdge', () => {
+    // Use takerPrice outside the noLiquidityBand (|price - 0.5| >= 0.02)
     // With MARKET_MAKER=true, fee=0. Use sharpProb - takerPrice = 0.01 < MIN_EDGE (0.02).
-    // With MARKET_MAKER=false, takerPrice=0.50 fee=0.00375, so 0.52-0.50-0.00375=0.01625 < 0.02.
-    const takerPrice = 0.50
+    // With MARKET_MAKER=false, takerPrice=0.52 fee≈0.00386, so 0.53-0.52-0.00386≈0.006 < 0.02.
+    const takerPrice = 0.52
     // Choose sharpProb so that netEdge < minEdge under either fee regime:
-    // fee=0 case: need sharpProb - 0.50 < 0.02 → sharpProb < 0.52 (use 0.51)
-    // fee>0 case: 0.51 - 0.50 - 0.00375 = 0.00625 < 0.02 — also works
-    const sharpProb = 0.51
+    // fee=0 case: need sharpProb - 0.52 < 0.02 → sharpProb < 0.54 (use 0.53)
+    // fee>0 case: 0.53 - 0.52 - ~0.004 ≈ 0.006 < 0.02 — also works
+    const sharpProb = 0.53
 
     const result = computeEdge({
       sharpProb,
@@ -89,10 +91,12 @@ describe('computeEdge', () => {
     const bankroll = 1000
     const maxPosition = bankroll * config.maxPositionPct
     // existingPosition exactly at cap — remainingMarketRoom = 0
+    // Use takerPrice outside the noLiquidityBand (|price - 0.5| >= 0.02)
+    // sharpProb=0.70 → grossEdge=0.18, within maxEdge
     const result = computeEdge({
-      sharpProb: 0.80,
-      polyPrice: 0.50,
-      takerPrice: 0.50,
+      sharpProb: 0.70,
+      polyPrice: 0.52,
+      takerPrice: 0.52,
       sportKey: 'basketball',
       bankroll,
       existingPosition: maxPosition,
@@ -106,10 +110,12 @@ describe('computeEdge', () => {
   it('returns tradeable=false with skipReason=event_cap_reached when existingEventExposure fills the event cap', () => {
     const bankroll = 1000
     const maxEvent = bankroll * config.maxEventPct
+    // Use takerPrice outside the noLiquidityBand (|price - 0.5| >= 0.02)
+    // sharpProb=0.70 → grossEdge=0.18, within maxEdge
     const result = computeEdge({
-      sharpProb: 0.80,
-      polyPrice: 0.50,
-      takerPrice: 0.50,
+      sharpProb: 0.70,
+      polyPrice: 0.52,
+      takerPrice: 0.52,
       sportKey: 'basketball',
       bankroll,
       existingPosition: 0,
