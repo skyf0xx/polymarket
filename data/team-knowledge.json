@@ -665,6 +665,30 @@
       "phx:mem": {
         "Yes": "Phoenix Suns",
         "No": "Memphis Grizzlies"
+      },
+      "nyk:hou": {
+        "Yes": "New York Knicks",
+        "No": "Houston Rockets"
+      },
+      "por:lac": {
+        "Yes": "Portland Trail Blazers",
+        "No": "LA Clippers"
+      },
+      "cle:lal": {
+        "Yes": "Los Angeles Lakers",
+        "No": "Cleveland Cavaliers"
+      },
+      "phx:orl": {
+        "Yes": "Phoenix Suns",
+        "No": "Orlando Magic"
+      },
+      "cha:bkn": {
+        "Yes": "Charlotte Hornets",
+        "No": "Brooklyn Nets"
+      },
+      "tor:det": {
+        "Yes": "Toronto Raptors",
+        "No": "Detroit Pistons"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
@@ -853,6 +877,30 @@
       "kuderme:oliynyk": {
         "Yes": "Kudermetova, Polina",
         "No": "Oliynykova, Oleksandra"
+      },
+      "yastrem:bencic": {
+        "Yes": "Dayana Yastremska",
+        "No": "Belinda Bencic"
+      },
+      "volynet:shnaide": {
+        "Yes": "Katie Volynets",
+        "No": "Diana Shnaider"
+      },
+      "bejlek:urhobo": {
+        "Yes": "Sara Bejlek",
+        "No": "Akasha Urhobo"
+      },
+      "tomova:kalinsk": {
+        "Yes": "Viktoriya Tomova",
+        "No": "Anna Kalinskaya"
+      },
+      "pegula:putints": {
+        "Yes": "Jessica Pegula",
+        "No": "Yulia Putintseva"
+      },
+      "baptist:zarazua": {
+        "Yes": "Hailey Baptiste",
+        "No": "Renata Zarazua"
       }
     },
     "usa-mlb": {
@@ -1075,6 +1123,14 @@
       "bolt:wu": {
         "Yes": "Bolt, Alex",
         "No": "Wu, Yibing"
+      },
+      "basavar:draxl": {
+        "Yes": "Basavareddy, Nishesh",
+        "No": "Draxl, Liam"
+      },
+      "etcheve:gomez": {
+        "Yes": "Etcheverry, Tomas Martin",
+        "No": "Gomez, Federico Agustin"
       }
     },
     "challenger-atp-challenger-morelia-mexico-men-singles": {
@@ -1191,6 +1247,14 @@
       "karatan:lepchen": {
         "Yes": "Karatancheva, Lia",
         "No": "Lepchenko, Varvara"
+      },
+      "bouzkov:sanchez": {
+        "Yes": "Bouzkova, Marie",
+        "No": "Sanchez, Ana Sofia"
+      },
+      "escorih:ortenzi": {
+        "Yes": "Irene Burillo Escorihuela",
+        "No": "Jazmin Ortenzi"
       }
     },
     "atp-atp-miami-usa-men-singles": {
@@ -1289,6 +1353,10 @@
       "jasika:tu": {
         "Yes": "Jasika, Omar",
         "No": "Tu, Li"
+      },
+      "moriya:matsuda": {
+        "Yes": "Hiroki Moriya",
+        "No": "Koki Matsuda"
       }
     },
     "atp-atp-marrakech-morocco-men-singles": {
@@ -1387,6 +1455,10 @@
       "skatov:carabel": {
         "Yes": "Skatov, Timofey",
         "No": "Ugo Carabelli, Camilo"
+      },
+      "moutet:baadi": {
+        "Yes": "Corentin Moutet",
+        "No": "Taha Baadi"
       }
     },
     "challenger-atp-challenger-barletta-italy-men-singles": {
@@ -1425,6 +1497,26 @@
       "mrva:krumich": {
         "Yes": "Mrva, Maxim",
         "No": "Krumich, Martin"
+      },
+      "ribecai:berret": {
+        "Yes": "Ribecai, Michele",
+        "No": "Berrettini, Jacopo"
+      },
+      "guerrie:kasniko": {
+        "Yes": "Guerrieri, Andrea",
+        "No": "Kasnikowski, Maks"
+      },
+      "lokoli:giustin": {
+        "Yes": "Lokoli, Laurent",
+        "No": "Giustino, Lorenzo"
+      },
+      "forti:sachko": {
+        "Yes": "Forti, Francesco",
+        "No": "Sachko, Vitaliy"
+      },
+      "valle:chazal": {
+        "Yes": "Dalla Valle, Enrico",
+        "No": "Chazal, Maxime"
       }
     },
     "challenger-atp-challenger-menorca-spain-men-singles": {
@@ -1439,8 +1531,8 @@
     },
     "challenger-atp-challenger-san-luis-potosi-mexico-men-singles": {
       "napolit:mena": {
-        "Yes": "Stefano Napolitano",
-        "No": "Facundo Mena"
+        "Yes": "Napolitano, Stefano",
+        "No": "Mena, Facundo"
       },
       "soto:orlov": {
         "Yes": "Soto, Matias",
@@ -1461,6 +1553,18 @@
       "catry:zhukaye": {
         "Yes": "Catry, Robin",
         "No": "Zhukayev, Beibit"
+      },
+      "mart:huesler": {
+        "Yes": "Martin, Dan",
+        "No": "Huesler, Marc-Andrea"
+      },
+      "wiskand:zahraj": {
+        "Yes": "Wiskandt, Max",
+        "No": "Zahraj, Patrick"
+      },
+      "duckwor:rubio": {
+        "Yes": "Duckworth, James",
+        "No": "Rubio Fierros, Alan Fernando"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
