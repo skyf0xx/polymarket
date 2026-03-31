@@ -1139,6 +1139,14 @@
       "etcheve:gomez": {
         "Yes": "Etcheverry, Tomas Martin",
         "No": "Gomez, Federico Agustin"
+      },
+      "vallejo:paul": {
+        "Yes": "Vallejo, Adolfo Daniel",
+        "No": "Paul, Tommy"
+      },
+      "shelton:zhang": {
+        "Yes": "Shelton, Ben",
+        "No": "Zhang, Zhizhen"
       }
     },
     "challenger-atp-challenger-morelia-mexico-men-singles": {
@@ -1467,6 +1475,10 @@
       "moutet:baadi": {
         "Yes": "Corentin Moutet",
         "No": "Taha Baadi"
+      },
+      "bennan:hanfman": {
+        "Yes": "Bennani, Karim",
+        "No": "Hanfmann, Yannick"
       }
     },
     "challenger-atp-challenger-barletta-italy-men-singles": {
@@ -1573,6 +1585,14 @@
       "duckwor:rubio": {
         "Yes": "Duckworth, James",
         "No": "Rubio Fierros, Alan Fernando"
+      },
+      "alboran:tobon": {
+        "Yes": "Moreno de Alboran, Nicolas",
+        "No": "Tobon, Miguel"
+      },
+      "denolly:mckenno": {
+        "Yes": "Denolly, Corentin",
+        "No": "McKennon, Maxwell"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
@@ -1623,6 +1643,52 @@
       "zarate:varilla": {
         "Yes": "Zarate, Carlos Maria",
         "No": "Varillas, Juan Pablo"
+      },
+      "fuente:acosta": {
+        "Yes": "De la Fuente, Santiago",
+        "No": "Diaz Acosta, Facundo"
+      }
+    },
+    "england-premier-league": {
+      "wes:wol": {
+        "Yes": "Wolverhampton Wanderers",
+        "No": "West Ham United"
+      },
+      "ars:bou": {
+        "Yes": "AFC Bournemouth",
+        "No": "Arsenal FC"
+      },
+      "bre:eve": {
+        "Yes": "Everton FC",
+        "No": "Brentford FC"
+      },
+      "bur:bri": {
+        "Yes": "Brighton & Hove Albion",
+        "No": "Burnley FC"
+      },
+      "liv:ful": {
+        "Yes": "Fulham FC",
+        "No": "Liverpool FC"
+      },
+      "sun:tot": {
+        "Yes": "Tottenham Hotspur",
+        "No": "Sunderland AFC"
+      },
+      "cry:new": {
+        "Yes": "Newcastle United",
+        "No": "Crystal Palace"
+      },
+      "not:ast": {
+        "Yes": "Aston Villa",
+        "No": "Nottingham Forest"
+      },
+      "che:mac": {
+        "Yes": "Manchester City",
+        "No": "Chelsea FC"
+      },
+      "mun:lee": {
+        "Yes": "Leeds United",
+        "No": "Manchester United"
       }
     }
   }
