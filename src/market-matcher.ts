@@ -232,10 +232,14 @@ export class MarketMatcher {
           // Sport filter: if we know what sport this batch needs, exclude unrelated sports
           if (batchOddsSports.size > 0 && !batchOddsSports.has(e.sport)) return false;
           if (!batchDates.has(e.time.slice(0, 10))) return false;
-          // If we resolved teams, only include events that match at least one market's teams
+          // If we resolved teams, only include events that match at least one market's teams.
+          // Check both team orderings since slug order doesn't always reflect home/away
+          // (e.g. EPL slugs are alphabetical, not home/away).
           if (batchTeams.length > 0) {
             return batchTeams.some(
-              (t) => looseNameMatch(e.home, t.home) && looseNameMatch(e.away, t.away),
+              (t) =>
+                (looseNameMatch(e.home, t.home) && looseNameMatch(e.away, t.away)) ||
+                (looseNameMatch(e.home, t.away) && looseNameMatch(e.away, t.home)),
             );
           }
           return true; // fallback: date-only filter if no teams could be resolved
