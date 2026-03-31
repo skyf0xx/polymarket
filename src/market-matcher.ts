@@ -12,7 +12,7 @@ import {
 import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import { TeamKnowledge, resolveIndices, looseNameMatch, parseSlug } from "./team-knowledge.js";
+import { TeamKnowledge, resolveIndices, looseNameMatch } from "./team-knowledge.js";
 import type {
   MatchEntry,
   MarketType,
@@ -176,6 +176,7 @@ export class MarketMatcher {
     const BATCH_SIZE = 10;
     // Anthropic free tier: 50k input tokens/min. Haiku prompt ~1500 tokens/batch.
     // Allow max 30k tokens/min (60% of limit) → 20s/batch minimum.
+    // Only applied between batches that actually call the LLM (skipped batches don't count).
     const TOKEN_BUDGET_PER_MIN = 30_000;
     const APPROX_TOKENS_PER_BATCH = 1_500;
     const MIN_DELAY_MS = Math.ceil((APPROX_TOKENS_PER_BATCH / TOKEN_BUDGET_PER_MIN) * 60_000); // ~3s
@@ -183,13 +184,9 @@ export class MarketMatcher {
     const batches = chunk(needsLlm, BATCH_SIZE);
     let newCount = deterministicCount;
     let totalLlmMatches = 0;
+    let lastLlmCallAt = 0;
 
     for (let i = 0; i < batches.length; i++) {
-      if (i > 0) {
-        log.info(`Waiting ${LLM_INTER_BATCH_DELAY_MS / 1000}s before next LLM batch (rate limit guard)...`);
-        await new Promise((r) => setTimeout(r, LLM_INTER_BATCH_DELAY_MS));
-      }
-
       const batch = batches[i];
       log.info(
         `LLM batch ${i + 1}/${batches.length}: ${batch.length} market(s), ${oddsEvents.length} odds events total`,
@@ -246,8 +243,17 @@ export class MarketMatcher {
         });
         if (filteredOddsEvents.length === 0) {
           log.warn(`Batch ${i + 1}/${batches.length}: no odds events after sport/date/team filter — skipping LLM call`);
+          log.warn(`  sports=${[...batchOddsSports]}, dates=${[...batchDates]}, teams=${JSON.stringify(batchTeams)}`);
           continue;
         }
+        log.info(`Batch ${i + 1}/${batches.length}: ${filteredOddsEvents.length} odds events after filter (from ${oddsEvents.length} total)`);
+        const elapsed = Date.now() - lastLlmCallAt;
+        if (lastLlmCallAt > 0 && elapsed < LLM_INTER_BATCH_DELAY_MS) {
+          const wait = LLM_INTER_BATCH_DELAY_MS - elapsed;
+          log.info(`Waiting ${(wait / 1000).toFixed(1)}s before LLM call (rate limit guard)...`);
+          await new Promise((r) => setTimeout(r, wait));
+        }
+        lastLlmCallAt = Date.now();
         const matches = await this.callLlmMatcher(filteredOddsEvents, batch);
         totalLlmMatches += matches.length;
 
@@ -578,6 +584,7 @@ Rules:
     }
 
     const raw: LlmMatchResult[] = block.input.matches as LlmMatchResult[];
+    log.info(`LLM returned ${raw.length} raw match(es): ${raw.map((r) => r.slug).join(", ") || "(none)"}`);
 
     // Convert to MatchEntry objects
     const now = Date.now();
