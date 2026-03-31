@@ -136,21 +136,21 @@ async function main(): Promise<void> {
   log.info(`Hydrating team knowledge for leagues: [${config.gammaLeagues.join(", ")}]`);
   await matcher.hydrateTeams(config.gammaLeagues);
 
-  // 6. Run initial match cycle (uses disk-cached matches + deterministic matching)
+  // 6. Hydrate positions from Polymarket Data API (critical — no WS alternative)
+  log.info("Hydrating positions from Data API...");
+  await positions.hydrate();
+
+  // 7. Start odds stream (REST hydrate then WS — cache pre-populated before matching)
+  log.info("Starting odds stream...");
+  await odds.start();
+
+  // 8. Run initial match cycle (odds cache is now populated)
   log.info("Running initial market match cycle...");
   const { newMatches, total } = await matcher.runMatchCycle(
     odds.getAllLines(),
     polymarkets,
   );
   log.info(`Initial matching: ${newMatches} new, ${total} total matches`);
-
-  // 7. Hydrate positions from Polymarket Data API (critical — no WS alternative)
-  log.info("Hydrating positions from Data API...");
-  await positions.hydrate();
-
-  // 8. Start odds stream (WS only — cache populates from live updates)
-  log.info("Starting odds stream...");
-  odds.start();
 
   // 9. Start price cache with matched token IDs (WS with initial_dump snapshots)
   const tokenIds = matcher.getAllTokenIds();
