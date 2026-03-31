@@ -1,8 +1,9 @@
 // src/odds-stream.ts
-// Manages the odds-api.io WebSocket connection.
+// Manages the odds-api.io WebSocket connection and REST hydration.
 // Maintains a live Map<eventId, SharpLine> and emits 'odds_update' events.
-// Cache populates entirely from WS updates; REST is only used to fetch
-// team names for new events (WS "created"/"updated" for unknown events).
+// REST hydration pre-populates the cache at startup (WS is a delta stream
+// with no initial dump). REST is also used to fetch team names for new
+// events that arrive via WS "created"/"updated" for unknown events.
 
 import WebSocket from "ws";
 import { EventEmitter } from "eventemitter3";
@@ -10,6 +11,7 @@ import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import type {
   SharpLine,
+  OddsApiIoEvent,
   OddsApiIoOddsResponse,
   OddsApiIoMarket,
   OddsWsMessage,
@@ -26,6 +28,8 @@ interface OddsStreamEvents {
 }
 
 const PING_INTERVAL_MS = 10_000;
+const ODDS_BATCH_SIZE = 10;
+const HYDRATE_CONCURRENCY = 5;
 
 export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private cache = new Map<string, SharpLine>();
@@ -36,6 +40,7 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private maxReconnectDelay = 60_000;
   private destroyed = false;
   private connectedAt = 0;
+  private _lastHydrateAt = 0;
   private static readonly STABLE_CONN_MS = 30_000; // 30s before resetting backoff
 
   // ── Public API ──────────────────────────────────────────────────
@@ -52,9 +57,130 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     return this.cache.size;
   }
 
-  /** Start WS connection. Cache populates from WS updates. */
-  start(): void {
+  get lastHydrateAt(): number {
+    return this._lastHydrateAt;
+  }
+
+  /** Hydrate cache from REST then start WS connection. */
+  async start(): Promise<void> {
+    await this.hydrateFromRest();
     this.connectWs();
+  }
+
+  /** Re-hydrate from REST (called by maintenance cycle). */
+  async rehydrate(): Promise<void> {
+    await this.hydrateFromRest();
+  }
+
+  // ── REST Hydration ──────────────────────────────────────────────
+  // Flow: GET /v3/events (get IDs) → GET /v3/odds in batches of 10
+
+  private async hydrateFromRest(): Promise<void> {
+    this._lastHydrateAt = Date.now();
+    log.info(`Hydrating odds for ${config.oddsApiSports.length} sport(s)...`);
+
+    for (const sport of config.oddsApiSports) {
+      await this.hydrateSportEvents(sport, "pending");
+      await this.hydrateSportEvents(sport, "live");
+    }
+
+    let withH2h = 0;
+    for (const l of this.cache.values()) {
+      if (l.markets.h2h) withH2h++;
+    }
+    log.info(`Odds cache ready: ${this.cache.size} events (${withH2h} with h2h)`);
+  }
+
+  private async hydrateSportEvents(
+    sport: string,
+    status: "pending" | "live",
+  ): Promise<void> {
+    try {
+      const eventsPath = status === "live" ? "/v3/events/live" : "/v3/events";
+      const eventsUrl =
+        `${config.oddsApiRestUrl}${eventsPath}` +
+        `?apiKey=${config.oddsApiKey}` +
+        `&sport=${sport}` +
+        (status === "pending" ? `&status=pending` : "");
+
+      const eventsRes = await fetch(eventsUrl, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!eventsRes.ok) {
+        const body = await eventsRes.text().catch(() => "");
+        log.error(
+          `Events fetch failed for ${sport} (${status}): HTTP ${eventsRes.status} ${eventsRes.statusText} — ${body}`,
+        );
+        return;
+      }
+
+      const events: OddsApiIoEvent[] = await eventsRes.json();
+      if (events.length === 0) {
+        log.info(`No ${status} events for ${sport}`);
+        return;
+      }
+
+      const ids = events.map((e) => String(e.id));
+      let hydrated = 0;
+
+      const batches: string[][] = [];
+      for (let i = 0; i < ids.length; i += ODDS_BATCH_SIZE) {
+        batches.push(ids.slice(i, i + ODDS_BATCH_SIZE));
+      }
+
+      for (let i = 0; i < batches.length; i += HYDRATE_CONCURRENCY) {
+        const chunk = batches.slice(i, i + HYDRATE_CONCURRENCY);
+        const results = await Promise.all(
+          chunk.map((batch) => this.fetchOddsBatch(batch)),
+        );
+        for (const lines of results) {
+          for (const line of lines) {
+            this.cache.set(line.eventId, line);
+            hydrated++;
+          }
+        }
+      }
+
+      log.info(
+        `Hydrated ${hydrated}/${events.length} ${status} events for ${sport}`,
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const cause =
+        err instanceof Error && err.cause ? ` | cause: ${err.cause}` : "";
+      log.error(
+        `REST hydration error for ${sport} (${status}): ${message}${cause}`,
+      );
+    }
+  }
+
+  private async fetchOddsBatch(eventIds: string[]): Promise<SharpLine[]> {
+    try {
+      const url =
+        `${config.oddsApiRestUrl}/v3/odds/multi` +
+        `?apiKey=${config.oddsApiKey}` +
+        `&eventIds=${eventIds.join(",")}` +
+        `&bookmakers=${config.bookmakerId}`;
+
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        log.error(
+          `Odds batch fetch failed: HTTP ${res.status} ${res.statusText} — ${body}`,
+        );
+        return [];
+      }
+
+      const data: OddsApiIoOddsResponse[] = await res.json();
+      return data.flatMap((item) => {
+        const line = this.parseOddsResponse(item);
+        return line ? [line] : [];
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`fetchOddsBatch error: ${message}`);
+      return [];
+    }
   }
 
   destroy(): void {
