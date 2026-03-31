@@ -1609,6 +1609,10 @@
       "marrero:delaney": {
         "Yes": "Marrero Curbelo, Ivan",
         "No": "Delaney, Jake"
+      },
+      "colson:pacheco": {
+        "Yes": "Colson, Tibo",
+        "No": "Pacheco Mendez, Rodrigo"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
@@ -1705,6 +1709,12 @@
       "mun:lee": {
         "Yes": "Leeds United",
         "No": "Manchester United"
+      }
+    },
+    "challenger-atp-challenger-san-luis-potosi-mexico-men-doubles": {
+      "mena:zahraj": {
+        "Yes": "Facundo Mena",
+        "No": "Patrick Zahraj"
       }
     }
   }
