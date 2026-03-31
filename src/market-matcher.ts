@@ -199,9 +199,18 @@ export class MarketMatcher {
         // Pre-filter odds events to only those relevant to this batch.
         // Resolve team names from slug abbreviations via team knowledge,
         // then match odds events by team name + date proximity.
-        const batchDates = new Set(
-          batch.map((pm) => pm.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean),
-        );
+        // Expand slug dates by ±1 day to handle UTC rollover: evening games in the US
+        // tip after UTC midnight, so a slug dated 2026-03-31 may have an odds event
+        // timestamped 2026-04-01T01:00:00Z.
+        const batchDates = new Set<string>();
+        for (const pm of batch) {
+          const d = pm.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+          if (!d) continue;
+          const ms = new Date(d).getTime();
+          batchDates.add(d);
+          batchDates.add(new Date(ms - 86_400_000).toISOString().slice(0, 10));
+          batchDates.add(new Date(ms + 86_400_000).toISOString().slice(0, 10));
+        }
         const batchTeams: Array<{ away: string; home: string }> = [];
         for (const pm of batch) {
           const teams = this.knowledge.resolveTeams(pm.slug);
