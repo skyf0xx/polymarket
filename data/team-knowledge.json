@@ -901,6 +901,14 @@
       "baptist:zarazua": {
         "Yes": "Hailey Baptiste",
         "No": "Renata Zarazua"
+      },
+      "kessler:tjen": {
+        "Yes": "Kessler, McCartney",
+        "No": "Tjen, Janice"
+      },
+      "bondar:frech": {
+        "Yes": "Bondar, Anna",
+        "No": "Frech, Magdalena"
       }
     },
     "usa-mlb": {
@@ -1599,6 +1607,22 @@
       "villanu:aboian": {
         "Yes": "Villanueva, Gonzalo",
         "No": "Aboian, Valerio"
+      },
+      "schiess:nikles": {
+        "Yes": "Schiessl, Joao Eduardo",
+        "No": "Nikles, Johan"
+      },
+      "zeitune:rodrig": {
+        "Yes": "Zeitune, Maximo",
+        "No": "Rodriguez, Lorenzo Joaquin"
+      },
+      "meza:ambrogi": {
+        "Yes": "Guillen Meza, Alvaro",
+        "No": "Ambrogi, Luciano Emanuel"
+      },
+      "zarate:varilla": {
+        "Yes": "Zarate, Carlos Maria",
+        "No": "Varillas, Juan Pablo"
       }
     }
   }
