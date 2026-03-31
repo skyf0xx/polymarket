@@ -909,6 +909,10 @@
       "bondar:frech": {
         "Yes": "Bondar, Anna",
         "No": "Frech, Magdalena"
+      },
+      "keys:vekic": {
+        "Yes": "Keys, Madison",
+        "No": "Vekic, Donna"
       }
     },
     "usa-mlb": {
@@ -1593,6 +1597,18 @@
       "denolly:mckenno": {
         "Yes": "Denolly, Corentin",
         "No": "McKennon, Maxwell"
+      },
+      "winegar:alujas": {
+        "Yes": "Winegar, Theodore",
+        "No": "Alujas, Rodrigo"
+      },
+      "ayeni:schoolk": {
+        "Yes": "Ayeni, Alafia",
+        "No": "Schoolkate, Tristan"
+      },
+      "marrero:delaney": {
+        "Yes": "Marrero Curbelo, Ivan",
+        "No": "Delaney, Jake"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
