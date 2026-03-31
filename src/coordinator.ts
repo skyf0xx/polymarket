@@ -392,7 +392,13 @@ export class Coordinator {
     log.info("Running maintenance cycle...");
 
     try {
-      // 1. Refresh Polymarket sports markets from Gamma
+      // 1. Re-hydrate odds from REST every hour (WS is delta-only)
+      if (Date.now() - this.odds.lastHydrateAt >= 60 * 60_000) {
+        log.info("Re-hydrating odds from REST (hourly)...");
+        await this.odds.rehydrate();
+      }
+
+      // 2. Refresh Polymarket sports markets from Gamma
       const polymarkets = await fetchPolymarketSportsMarkets();
       log.info(
         `Fetched ${polymarkets.length} active sports markets from Gamma`,
