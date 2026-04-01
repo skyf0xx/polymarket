@@ -62,26 +62,16 @@ export async function executeSignal(
       console.log("Best bid:", sellPrice.price); // Price you'd receive to sell
      */
 
-    const [{ price: bookPrice }, { spread: spreadStr }] = await Promise.all([
-      client.getPrice(signal.tokenId, isBuy ? "BUY" : "SELL"),
-      client.getSpread(signal.tokenId),
-    ]);
-    const spread = Number(spreadStr);
-    const tickDecimals = tick.toString().includes(".")
-      ? tick.toString().split(".")[1].length
-      : 0;
+    const { price: bookPrice } = await client.getPrice(
+      signal.tokenId,
+      isBuy ? "BUY" : "SELL",
+    );
+
+    // For buys: use signal price, but cap it one tick below ask if it would cross or match.
     const bookBasedPrice = isBuy
-      ? parseFloat(
-          (Math.floor((Number(bookPrice) - spread / 2) / tick) * tick).toFixed(
-            tickDecimals,
-          ),
-        )
+      ? Math.min(signal.price, Number(bookPrice) - tick) // Lesser of the signal price or just below the ask
       : Number(bookPrice) - 2 * tick; // SELL is FAK into the market
-    // For buys: cap at signal.price — if the market moved up since edge detection,
-    // paying more would erode or negate the edge we sized against.
-    const orderPrice = isBuy
-      ? Math.min(bookBasedPrice, parseFloat(signal.price.toFixed(tickDecimals)))
-      : bookBasedPrice;
+    const orderPrice = bookBasedPrice;
     const size = signal.size;
 
     const isSell = !isBuy;
