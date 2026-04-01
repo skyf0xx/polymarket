@@ -717,6 +717,14 @@
       "nyk:mem": {
         "Yes": "New York Knicks",
         "No": "Memphis Grizzlies"
+      },
+      "sac:tor": {
+        "Yes": "Sacramento Kings",
+        "No": "Toronto Raptors"
+      },
+      "mil:hou": {
+        "Yes": "Milwaukee Bucks",
+        "No": "Houston Rockets"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
