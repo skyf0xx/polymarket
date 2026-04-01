@@ -88,6 +88,8 @@ export const config = {
   cooldownSeconds: envNum("COOLDOWN_SECONDS", 30),
   debounceMs: envNum("DEBOUNCE_MS", 500),
   maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000), // 5 min
+  maxSharpProbAgeMs: envNum("MAX_SHARP_PROB_AGE_MS", 5 * 60_000), // 5 min
+  maxNegativeEdgeChecks: envNum("MAX_NEGATIVE_EDGE_CHECKS", 5), // exit after N consecutive ≤0 edge checks
 
   // Operation
   verbose: envBool("VERBOSE", false),

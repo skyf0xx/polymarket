@@ -49,6 +49,9 @@ export class Coordinator {
   // Debounce: per-token pending edge check timers
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  // Consecutive ≤0 edge check counter per token (for underwater persistence exit)
+  private negativeEdgeChecks = new Map<string, number>();
+
   // Bound event handlers (stored for targeted removal in destroy())
   private boundOnOddsUpdate = this.onOddsUpdate.bind(this);
   private boundOnPriceUpdate = this.onPriceUpdate.bind(this);
@@ -308,13 +311,25 @@ export class Coordinator {
       // resolved and a FOK sell order will always fail with no liquidity.
       if (priceEntry.bestBid < config.minPrice) return;
 
+      const consecutiveNegativeEdgeChecks = this.negativeEdgeChecks.get(tokenId) ?? 0;
       const exitResult = checkExit({
         position,
         currentPrice: priceEntry.price,
         bestBid: priceEntry.bestBid, // selling → receive the bid
         sharpProb,
+        sharpProbUpdatedAt: line.updatedAt,
         sportKey: match.sportKey,
+        consecutiveNegativeEdgeChecks,
       });
+
+      // Track consecutive non-positive edge checks
+      const exitFeeApprox = priceEntry.bestBid * priceEntry.bestBid * (1 - priceEntry.bestBid) * 0.03;
+      const currentEdge = sharpProb - priceEntry.bestBid - exitFeeApprox;
+      if (currentEdge <= 0) {
+        this.negativeEdgeChecks.set(tokenId, consecutiveNegativeEdgeChecks + 1);
+      } else {
+        this.negativeEdgeChecks.delete(tokenId);
+      }
 
       if (!exitResult.shouldExit) return;
 
@@ -353,6 +368,7 @@ export class Coordinator {
       };
 
       markSignaled(tokenId);
+      this.negativeEdgeChecks.delete(tokenId);
       this.dispatchSignal(signal);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

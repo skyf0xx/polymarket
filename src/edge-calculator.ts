@@ -198,7 +198,9 @@ export interface ExitCheckInput {
   currentPrice: number; // midpoint (for logging)
   bestBid: number; // taker sell price — what you'd actually receive
   sharpProb: number; // current sharp line implied prob
+  sharpProbUpdatedAt: number; // Date.now() when odds line was last updated
   sportKey: string;
+  consecutiveNegativeEdgeChecks: number; // how many consecutive checks edge has been ≤0
 }
 
 export interface ExitResult {
@@ -211,24 +213,47 @@ export interface ExitResult {
 /**
  * Check if an open position should be exited.
  *
- *  1. Edge still positive → hold
- *  2. Edge strongly negative (< -2 × minEdge, thesis broken) → cut loss immediately
- *  3. Edge gone, profit clears round-trip fees → exit to lock gains
- *  4. Otherwise → hold
+ *  0. Stale odds → hold (don't act on bad data)
+ *  1. Edge > 0 → hold (thesis intact)
+ *  2. Edge ≤ 0 + profit ≥ minEdge → take profit (locked meaningful gain)
+ *  3. Edge < -minEdge → cut loss (thesis broken)
+ *  4. Edge ≤ 0 + profit covers round-trip fees → lock gain
+ *  5. Edge ≤ 0 for N consecutive checks → exit (underwater persistence)
+ *  6. Otherwise → hold
  */
 export function checkExit(input: ExitCheckInput): ExitResult {
-  const { position, bestBid, sharpProb } = input;
+  const { position, bestBid, sharpProb, sharpProbUpdatedAt, consecutiveNegativeEdgeChecks } = input;
 
   const exitFee = estimateExitFee(bestBid);
   const edge = sharpProb - bestBid - exitFee;
   const profitPerShare = bestBid - position.avgPrice;
 
-  // Thesis intact — keep holding
+  // 0. Stale odds — don't act on data that may no longer reflect the market
+  const sharpProbAge = Date.now() - sharpProbUpdatedAt;
+  if (sharpProbAge > config.maxSharpProbAgeMs) {
+    log.warn(`Stale sharp odds for ${input.position.slug} (${(sharpProbAge / 1000).toFixed(0)}s old) — skipping exit check`);
+    return { shouldExit: false, edge, profitPerShare };
+  }
+
+  // 1. Thesis intact — keep holding
   if (edge > 0) {
     return { shouldExit: false, edge, profitPerShare };
   }
 
-  // Edge reversed hard — thesis broken, cut immediately
+  // Edge is ≤ 0 from here on.
+
+  // 2. Take profit — locked a meaningful gain (at least minEdge worth)
+  const roundTripFee = estimateFee(position.avgPrice) + exitFee;
+  if (profitPerShare >= config.minEdge) {
+    return {
+      shouldExit: true,
+      reason: `take_profit: ${(profitPerShare * 100).toFixed(1)}¢/share (edge ${(edge * 100).toFixed(2)}%)`,
+      edge,
+      profitPerShare,
+    };
+  }
+
+  // 3. Thesis broken hard — cut immediately
   if (edge < -config.minEdge) {
     return {
       shouldExit: true,
@@ -238,27 +263,27 @@ export function checkExit(input: ExitCheckInput): ExitResult {
     };
   }
 
-  // Edge gone — exit if profit covers round-trip fees OR we've locked 2× fees (take profit)
-  const roundTripFee = estimateFee(position.avgPrice) + exitFee;
-  if (profitPerShare >= 2 * roundTripFee) {
+  // 4. Edge gone, profit clears round-trip fees — lock the gain
+  if (profitPerShare >= roundTripFee) {
     return {
       shouldExit: true,
-      reason: `take_profit: ${(profitPerShare * 100).toFixed(1)}¢/share (edge ${(edge * 100).toFixed(2)}%)`,
+      reason: `edge_gone (${(edge * 100).toFixed(2)}%), locking ${(profitPerShare * 100).toFixed(1)}¢/share`,
       edge,
       profitPerShare,
     };
   }
 
-  if (profitPerShare < roundTripFee) {
-    return { shouldExit: false, edge, profitPerShare };
+  // 5. Underwater with persistently zero/negative edge — exit to free capital
+  if (consecutiveNegativeEdgeChecks >= config.maxNegativeEdgeChecks) {
+    return {
+      shouldExit: true,
+      reason: `underwater_persistence: edge ≤0 for ${consecutiveNegativeEdgeChecks} checks, P&L ${(profitPerShare * 100).toFixed(1)}¢/share`,
+      edge,
+      profitPerShare,
+    };
   }
 
-  return {
-    shouldExit: true,
-    reason: `edge_gone (${(edge * 100).toFixed(2)}%), locking ${(profitPerShare * 100).toFixed(1)}¢/share`,
-    edge,
-    profitPerShare,
-  };
+  return { shouldExit: false, edge, profitPerShare };
 }
 
 // ── Logging Helper ────────────────────────────────────────────────
