@@ -4,18 +4,10 @@
 
 import { ClobClient, OrderType, Side } from "@polymarket/clob-client";
 import type { TickSize } from "@polymarket/clob-client";
-import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import type { PendingOrders } from "./pending-orders.js";
 import type { PositionTracker } from "./position-tracker.js"; // type-only: only used for parameter typing
 import type { TradeSignal } from "./types.js";
-
-const TICK_MAP: Record<string, number> = {
-  "0.1": 0.1,
-  "0.01": 0.01,
-  "0.001": 0.001,
-  "0.0001": 0.0001,
-};
 
 const log = createLogger("executor");
 
@@ -28,56 +20,21 @@ interface MarketInfo {
 
 const marketCache = new Map<string, MarketInfo>();
 
-async function getMarketInfo(slug: string): Promise<MarketInfo> {
-  const cached = marketCache.get(slug);
+async function getMarketInfo(
+  client: ClobClient,
+  tokenId: string,
+): Promise<MarketInfo> {
+  const cached = marketCache.get(tokenId);
   if (cached) return cached;
 
-  const res = await fetch(`${config.gammaApiUrl}/markets/slug/${slug}`);
-  if (!res.ok)
-    throw new Error(`Gamma API error for slug ${slug}: ${res.status}`);
-  const market = await res.json();
-
-  const tickSize = String(market.orderPriceMinTickSize) as TickSize;
-  const negRisk = market.events?.[0]?.negRisk ?? false;
+  const [tickSize, negRisk] = await Promise.all([
+    client.getTickSize(tokenId),
+    client.getNegRisk(tokenId),
+  ]);
 
   const info: MarketInfo = { tickSize, negRisk };
-  marketCache.set(slug, info);
+  marketCache.set(tokenId, info);
   return info;
-}
-
-// ── Orderbook Best Bid/Ask (maker mode only) ────────────────────
-
-interface TopOfBook {
-  bestBid: number;
-  bestAsk: number;
-}
-
-async function getTopOfBook(tokenId: string): Promise<TopOfBook> {
-  try {
-    const res = await fetch(`${config.clobApiUrl}/book?token_id=${tokenId}`);
-    if (!res.ok) return { bestBid: 0, bestAsk: 1 };
-
-    const book = await res.json();
-    const bids: Array<{ price?: string | number; [index: number]: string | number }> = book.bids ?? [];
-    const asks: Array<{ price?: string | number; [index: number]: string | number }> = book.asks ?? [];
-
-    // Bids/asks are NOT guaranteed sorted — find best manually
-    let bestBid = 0;
-    for (const b of bids) {
-      const p = Number(b.price ?? b[0] ?? 0);
-      if (p > bestBid) bestBid = p;
-    }
-    let bestAsk = asks.length > 0 ? Infinity : 1;
-    for (const a of asks) {
-      const p = Number(a.price ?? a[0] ?? Infinity);
-      if (p < bestAsk) bestAsk = p;
-    }
-    if (bestAsk === Infinity) bestAsk = 1;
-
-    return { bestBid, bestAsk };
-  } catch {
-    return { bestBid: 0, bestAsk: 1 };
-  }
 }
 
 // ── Main Execute Function ─────────────────────────────────────────
@@ -92,53 +49,30 @@ export async function executeSignal(
 
   try {
     // 1. Get market info (tick size + negRisk)
-    const { tickSize, negRisk } = await getMarketInfo(signal.slug);
+    const { tickSize, negRisk } = await getMarketInfo(client, signal.tokenId);
 
-    // 2. Use the price from edge detection — GTD order will expire if it doesn't fill
-    let orderPrice = signal.price;
+    // 2. Place 2 ticks inside the best bid/ask
+    const tick = Number(tickSize);
+    const isBuy = signal.side === "BUY";
+
+    /** NOTE FROM DOCS
+     * const buyPrice = await client.getPrice("TOKEN_ID", "BUY");
+      console.log("Best ask:", buyPrice.price); // Price you'd pay to buy
+
+      const sellPrice = await client.getPrice("TOKEN_ID", "SELL");
+      console.log("Best bid:", sellPrice.price); // Price you'd receive to sell
+     */
+
+    const { price: bookPrice } = await client.getPrice(
+      signal.tokenId,
+      isBuy ? "BUY" : "SELL",
+    );
+    const orderPrice = isBuy
+      ? Number(bookPrice) - 2 * tick // 2 ticks below best ask (we're market making)
+      : Number(bookPrice) - 2 * tick; // 2 ticks below best bid (sell aggressively into bid)
     const size = signal.size;
 
-    // 2b. Truncate to tick grid and clamp to valid CLOB range [tick, 1 - tick]
-    //     BUY: floor (pay less), SELL: ceil (receive more) — always in our favor
-    const tick = TICK_MAP[tickSize] ?? 0.01;
-    const inv = Math.round(1 / tick); // e.g. 100 for tick 0.01
-    orderPrice = signal.side === "BUY"
-      ? Math.floor(orderPrice * inv) / inv
-      : Math.ceil(orderPrice * inv) / inv;
-    const minPrice = tick;
-    const maxPrice = Math.round((1 - tick) * inv) / inv;
-    orderPrice = Math.max(minPrice, Math.min(maxPrice, orderPrice));
-
-    // 3. For BUY orders, fetch the live order book and cap the price below best ask
-    //    to avoid "crosses the book" rejections (market may have moved since edge detection).
-    //    In maker mode, additionally push price down to bestBid + 1 tick.
-    if (signal.side === "BUY") {
-      const obInfo = await getTopOfBook(signal.tokenId);
-      const safeMax = obInfo.bestAsk > tick ? obInfo.bestAsk - tick : obInfo.bestAsk;
-
-      if (config.marketMaker) {
-        const makerPrice = Math.min(
-          obInfo.bestBid + tick,  // one tick above best bid
-          safeMax,                // never cross the spread
-        );
-        if (makerPrice > 0 && makerPrice < 1) {
-          orderPrice = Math.min(orderPrice, makerPrice);
-        }
-        log.info(
-          `MAKER ${tag} bid=${obInfo.bestBid} ask=${obInfo.bestAsk} → order_price=${orderPrice.toFixed(4)}`,
-        );
-      } else {
-        // Taker mode: cap at bestAsk - 1 tick so we don't cross the book
-        if (obInfo.bestAsk > 0 && orderPrice >= obInfo.bestAsk) {
-          log.info(
-            `TAKER ${tag} ask=${obInfo.bestAsk} — capping order_price from ${orderPrice.toFixed(4)} to ${safeMax.toFixed(4)}`,
-          );
-          orderPrice = safeMax;
-        }
-      }
-    }
-
-    const isSell = signal.side === "SELL";
+    const isSell = !isBuy;
     const sdkSide = isSell ? Side.SELL : Side.BUY;
 
     log.info(
@@ -192,7 +126,9 @@ export async function executeSignal(
       return true;
     } else {
       // SDK returns { status: 400, error: "message" } on failure
-      const errorMsg: string = (resp as { error?: string })?.error ?? String(resp?.status ?? JSON.stringify(resp));
+      const errorMsg: string =
+        (resp as { error?: string })?.error ??
+        String(resp?.status ?? JSON.stringify(resp));
       const errorStr = resp?.status ?? JSON.stringify(resp);
       const isBalanceError = errorMsg.includes("not enough balance");
 
@@ -203,7 +139,10 @@ export async function executeSignal(
         return false;
       }
 
-      const trackedPosition = signal.side === "SELL" ? positions?.getPosition(signal.tokenId) : undefined;
+      const trackedPosition =
+        signal.side === "SELL"
+          ? positions?.getPosition(signal.tokenId)
+          : undefined;
 
       log.recordError(`✗ Order failed`, {
         tokenId: signal.tokenId,
@@ -215,18 +154,19 @@ export async function executeSignal(
         reason: signal.reason,
         success: false,
         error: errorStr,
-        ...(isBalanceError && signal.side === "SELL" && {
-          debug_balance_error: {
-            tracker_size: trackedPosition?.size ?? null,
-            tracker_avg_price: trackedPosition?.avgPrice ?? null,
-            tracker_total_cost: trackedPosition?.totalCost ?? null,
-            order_size: size,
-            order_price: orderPrice,
-            // raw CLOB amounts: makerAmount = shares * 1e6, takerAmount = USDC * 1e6
-            expected_maker_amount: Math.round(size * 1e6),
-            expected_taker_amount: Math.round(size * orderPrice * 1e6),
-          },
-        }),
+        ...(isBalanceError &&
+          signal.side === "SELL" && {
+            debug_balance_error: {
+              tracker_size: trackedPosition?.size ?? null,
+              tracker_avg_price: trackedPosition?.avgPrice ?? null,
+              tracker_total_cost: trackedPosition?.totalCost ?? null,
+              order_size: size,
+              order_price: orderPrice,
+              // raw CLOB amounts: makerAmount = shares * 1e6, takerAmount = USDC * 1e6
+              expected_maker_amount: Math.round(size * 1e6),
+              expected_taker_amount: Math.round(size * orderPrice * 1e6),
+            },
+          }),
       });
 
       // Stale position → re-hydrate so we stop retrying with wrong size
