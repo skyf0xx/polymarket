@@ -51,10 +51,9 @@ export async function executeSignal(
     // 1. Get market info (tick size + negRisk)
     const { tickSize, negRisk } = await getMarketInfo(client, signal.tokenId);
 
-    // 2. Place 2 ticks inside the best bid/ask
+    // 2. Buys are market makers within the spread. Asks sell into th emarket
     const tick = Number(tickSize);
     const isBuy = signal.side === "BUY";
-
     /** NOTE FROM DOCS
      * const buyPrice = await client.getPrice("TOKEN_ID", "BUY");
       console.log("Best ask:", buyPrice.price); // Price you'd pay to buy
@@ -71,13 +70,18 @@ export async function executeSignal(
     const tickDecimals = tick.toString().includes(".")
       ? tick.toString().split(".")[1].length
       : 0;
-    const orderPrice = isBuy
+    const bookBasedPrice = isBuy
       ? parseFloat(
           (Math.floor((Number(bookPrice) - spread / 2) / tick) * tick).toFixed(
             tickDecimals,
           ),
         )
       : Number(bookPrice) - 2 * tick; // SELL is FAK into the market
+    // For buys: cap at signal.price — if the market moved up since edge detection,
+    // paying more would erode or negate the edge we sized against.
+    const orderPrice = isBuy
+      ? Math.min(bookBasedPrice, parseFloat(signal.price.toFixed(tickDecimals)))
+      : bookBasedPrice;
     const size = signal.size;
 
     const isSell = !isBuy;
