@@ -25,6 +25,11 @@ function estimateFee(price: number, _sportKey?: string): number {
   return FEE_RATE * price * price * (1 - price);
 }
 
+// Exits are always market orders (taker), so fee applies unconditionally.
+function estimateExitFee(price: number): number {
+  return FEE_RATE * price * price * (1 - price);
+}
+
 // ── Cooldown State ────────────────────────────────────────────────
 
 const lastSignalTime = new Map<string, number>();
@@ -214,7 +219,7 @@ export interface ExitResult {
 export function checkExit(input: ExitCheckInput): ExitResult {
   const { position, bestBid, sharpProb } = input;
 
-  const exitFee = estimateFee(bestBid);
+  const exitFee = estimateExitFee(bestBid);
   const edge = sharpProb - bestBid - exitFee;
   const profitPerShare = bestBid - position.avgPrice;
 
@@ -223,8 +228,8 @@ export function checkExit(input: ExitCheckInput): ExitResult {
     return { shouldExit: false, edge, profitPerShare };
   }
 
-  // Edge reversed hard — thesis broken, cut regardless of P&L
-  if (edge < -2 * config.minEdge) {
+  // Edge reversed hard — thesis broken, cut immediately
+  if (edge < -config.minEdge) {
     return {
       shouldExit: true,
       reason: `loss_cut: edge ${(edge * 100).toFixed(2)}%, P&L ${(profitPerShare * 100).toFixed(1)}¢/share`,
@@ -233,8 +238,17 @@ export function checkExit(input: ExitCheckInput): ExitResult {
     };
   }
 
-  // Edge mildly gone — only exit if profit covers round-trip fees
+  // Edge gone — exit if profit covers round-trip fees OR we've locked 2× fees (take profit)
   const roundTripFee = estimateFee(position.avgPrice) + exitFee;
+  if (profitPerShare >= 2 * roundTripFee) {
+    return {
+      shouldExit: true,
+      reason: `take_profit: ${(profitPerShare * 100).toFixed(1)}¢/share (edge ${(edge * 100).toFixed(2)}%)`,
+      edge,
+      profitPerShare,
+    };
+  }
+
   if (profitPerShare < roundTripFee) {
     return { shouldExit: false, edge, profitPerShare };
   }
