@@ -213,18 +213,18 @@ export class Coordinator {
       // Include pending (unfilled) order notional to avoid over-sizing.
       const yesCost = this.positions.getPositionCost(match.tokenIds.yes);
       const noCost = this.positions.getPositionCost(match.tokenIds.no);
-      const yesPending = this.pendingOrders.getTokenNotional(match.tokenIds.yes);
+      const yesPending = this.pendingOrders.getTokenNotional(
+        match.tokenIds.yes,
+      );
       const noPending = this.pendingOrders.getTokenNotional(match.tokenIds.no);
       const existingPosition = yesCost + noCost + yesPending + noPending;
 
       // Event-level exposure: sum positions across all markets for this event
-      const existingEventExposure = this.computeEventExposure(match.oddsApiEventId);
+      const existingEventExposure = this.computeEventExposure(
+        match.oddsApiEventId,
+      );
 
-      // In maker mode, use midpoint as the expected fill price (fees are 0).
-      // The executor will snap to bestBid + 1 tick for the actual order.
-      const fillPrice = config.marketMaker
-        ? (priceEntry.bestBid + priceEntry.bestAsk) / 2
-        : priceEntry.bestAsk;
+      const fillPrice = priceEntry.bestAsk;
 
       const result = computeEdge({
         sharpProb,
@@ -311,7 +311,8 @@ export class Coordinator {
       // resolved and a FOK sell order will always fail with no liquidity.
       if (priceEntry.bestBid < config.minPrice) return;
 
-      const consecutiveNegativeEdgeChecks = this.negativeEdgeChecks.get(tokenId) ?? 0;
+      const consecutiveNegativeEdgeChecks =
+        this.negativeEdgeChecks.get(tokenId) ?? 0;
       const exitResult = checkExit({
         position,
         currentPrice: priceEntry.price,
@@ -323,7 +324,11 @@ export class Coordinator {
       });
 
       // Track consecutive non-positive edge checks
-      const exitFeeApprox = priceEntry.bestBid * priceEntry.bestBid * (1 - priceEntry.bestBid) * 0.03;
+      const exitFeeApprox =
+        priceEntry.bestBid *
+        priceEntry.bestBid *
+        (1 - priceEntry.bestBid) *
+        0.03;
       const currentEdge = sharpProb - priceEntry.bestBid - exitFeeApprox;
       if (currentEdge <= 0) {
         this.negativeEdgeChecks.set(tokenId, consecutiveNegativeEdgeChecks + 1);
@@ -399,9 +404,12 @@ export class Coordinator {
     }
 
     // Fire and forget — executor handles its own error logging
-    executeSignal(this.client, signal, this.pendingOrders, this.positions).catch((err) =>
-      log.error(`Executor dispatch error: ${err.message}`),
-    );
+    executeSignal(
+      this.client,
+      signal,
+      this.pendingOrders,
+      this.positions,
+    ).catch((err) => log.error(`Executor dispatch error: ${err.message}`));
   }
 
   // ── Maintenance ─────────────────────────────────────────────────

@@ -159,7 +159,9 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
       try {
         const parsed = JSON.parse(text);
         // Polymarket WS wraps messages in an array: [{event_type: "book", ...}]
-        const msgs: PolymarketWsMessage[] = Array.isArray(parsed) ? parsed : [parsed];
+        const msgs: PolymarketWsMessage[] = Array.isArray(parsed)
+          ? parsed
+          : [parsed];
         for (const msg of msgs) {
           this.handleMessage(msg);
         }
@@ -244,8 +246,8 @@ export class PriceCache extends EventEmitter<PriceCacheEvents> {
   }
 
   private updateCache(tokenId: string, bestBid: number, bestAsk: number): void {
-    const price =
-      bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : bestBid || bestAsk;
+    const price = bestAsk;
+
     const entry: PriceEntry = {
       tokenId,
       price,
