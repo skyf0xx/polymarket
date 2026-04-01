@@ -689,6 +689,34 @@
       "tor:det": {
         "Yes": "Toronto Raptors",
         "No": "Detroit Pistons"
+      },
+      "bos:mia": {
+        "Yes": "Boston Celtics",
+        "No": "Miami Heat"
+      },
+      "sas:gsw": {
+        "Yes": "San Antonio Spurs",
+        "No": "Golden State Warriors"
+      },
+      "ind:chi": {
+        "Yes": "Chicago Bulls",
+        "No": "Indiana Pacers"
+      },
+      "phi:was": {
+        "Yes": "Philadelphia 76ers",
+        "No": "Washington Wizards"
+      },
+      "atl:orl": {
+        "Yes": "Atlanta Hawks",
+        "No": "Orlando Magic"
+      },
+      "den:uta": {
+        "Yes": "Denver Nuggets",
+        "No": "Utah Jazz"
+      },
+      "nyk:mem": {
+        "Yes": "New York Knicks",
+        "No": "Memphis Grizzlies"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
@@ -887,8 +915,8 @@
         "No": "Diana Shnaider"
       },
       "bejlek:urhobo": {
-        "Yes": "Sara Bejlek",
-        "No": "Akasha Urhobo"
+        "Yes": "Bejlek, Sara",
+        "No": "Urhobo, Akasha"
       },
       "tomova:kalinsk": {
         "Yes": "Viktoriya Tomova",
@@ -913,6 +941,26 @@
       "keys:vekic": {
         "Yes": "Keys, Madison",
         "No": "Vekic, Donna"
+      },
+      "yuan:cocciar": {
+        "Yes": "Yuan, Yue",
+        "No": "Cocciaretto, Elisabetta"
+      },
+      "sakkari:badosa": {
+        "Yes": "Sakkari, Maria",
+        "No": "Badosa, Paula"
+      },
+      "andrees:kenin": {
+        "Yes": "Andreescu, Bianca",
+        "No": "Kenin, Sofia"
+      },
+      "stearns:krueger": {
+        "Yes": "Stearns, Peyton",
+        "No": "Krueger, Ashlyn"
+      },
+      "fernand:kuderme": {
+        "Yes": "Fernandez, Leylah",
+        "No": "Kudermetova, Polina"
       }
     },
     "usa-mlb": {
@@ -1151,6 +1199,14 @@
       "shelton:zhang": {
         "Yes": "Shelton, Ben",
         "No": "Zhang, Zhizhen"
+      },
+      "etcheve:bolt": {
+        "Yes": "Etcheverry, Tomas Martin",
+        "No": "Bolt, Alex"
+      },
+      "tirante:mcdonal": {
+        "Yes": "Tirante, Thiago Agustin",
+        "No": "McDonald, Mackenzie"
       }
     },
     "challenger-atp-challenger-morelia-mexico-men-singles": {
@@ -1275,6 +1331,14 @@
       "escorih:ortenzi": {
         "Yes": "Irene Burillo Escorihuela",
         "No": "Jazmin Ortenzi"
+      },
+      "riera:blinkov": {
+        "Yes": "Riera, Julia",
+        "No": "Blinkova, Anna"
+      },
+      "papamic:semenis": {
+        "Yes": "Despina Papamichail",
+        "No": "Darja Semenistaja"
       }
     },
     "atp-atp-miami-usa-men-singles": {
@@ -1335,6 +1399,18 @@
       "oconnel:navone": {
         "Yes": "O'Connell, Christopher",
         "No": "Navone, Mariano"
+      },
+      "borges:dzumhur": {
+        "Yes": "Borges, Nuno",
+        "No": "Dzumhur, Damir"
+      },
+      "diallo:molcan": {
+        "Yes": "Diallo, Gabriel",
+        "No": "Molcan, Alex"
+      },
+      "shevche:zandsch": {
+        "Yes": "Alexander Shevchenko",
+        "No": "Botic van de Zandschulp"
       }
     },
     "challenger-atp-challenger-miyazaki-japan-men-singles": {
@@ -1483,6 +1559,14 @@
       "bennan:hanfman": {
         "Yes": "Bennani, Karim",
         "No": "Hanfmann, Yannick"
+      },
+      "darderi:bellucc": {
+        "Yes": "Luciano Darderi",
+        "No": "Mattia Bellucci"
+      },
+      "trungel:majchrz": {
+        "Yes": "Marco Trungelliti",
+        "No": "Kamil Majchrzak"
       }
     },
     "challenger-atp-challenger-barletta-italy-men-singles": {
@@ -1541,6 +1625,14 @@
       "valle:chazal": {
         "Yes": "Dalla Valle, Enrico",
         "No": "Chazal, Maxime"
+      },
+      "neumaye:samuel": {
+        "Yes": "Neumayer, Lukas",
+        "No": "Samuel, Toby"
+      },
+      "cecchin:gill": {
+        "Yes": "Cecchinato, Marco",
+        "No": "Gill, Felix"
       }
     },
     "challenger-atp-challenger-menorca-spain-men-singles": {
@@ -1613,6 +1705,14 @@
       "colson:pacheco": {
         "Yes": "Colson, Tibo",
         "No": "Pacheco Mendez, Rodrigo"
+      },
+      "mena:zahraj": {
+        "Yes": "Mena, Facundo",
+        "No": "Zahraj, Patrick"
+      },
+      "zhukaye:mart": {
+        "Yes": "Zhukayev, Beibit",
+        "No": "Martin, Dan"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
@@ -1661,12 +1761,16 @@
         "No": "Ambrogi, Luciano Emanuel"
       },
       "zarate:varilla": {
-        "Yes": "Zarate, Carlos Maria",
-        "No": "Varillas, Juan Pablo"
+        "Yes": "Carlos Maria Zarate",
+        "No": "Juan Pablo Varillas"
       },
       "fuente:acosta": {
         "Yes": "De la Fuente, Santiago",
         "No": "Diaz Acosta, Facundo"
+      },
+      "rodrig:santos": {
+        "Yes": "Lorenzo Joaquin Rodriguez",
+        "No": "Paulo Andre Saraiva Dos Santos"
       }
     },
     "england-premier-league": {
@@ -1715,6 +1819,12 @@
       "mena:zahraj": {
         "Yes": "Facundo Mena",
         "No": "Patrick Zahraj"
+      }
+    },
+    "challenger-atp-challenger-sao-leopoldo-brazil-men-doubles": {
+      "villanu:dellien": {
+        "Yes": "Gonzalo Villanueva",
+        "No": "Hugo Dellien"
       }
     }
   }
