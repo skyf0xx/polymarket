@@ -304,6 +304,10 @@ export class Coordinator {
       const priceEntry = this.prices.getPrice(tokenId);
       if (!priceEntry) return;
 
+      // Skip exit if best bid is below minimum price — market has effectively
+      // resolved and a FOK sell order will always fail with no liquidity.
+      if (priceEntry.bestBid < config.minPrice) return;
+
       const exitResult = checkExit({
         position,
         currentPrice: priceEntry.price,
