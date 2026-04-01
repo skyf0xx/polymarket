@@ -72,20 +72,24 @@ export async function executeSignal(
       ? tick.toString().split(".")[1].length
       : 0;
     const orderPrice = isBuy
-      ? parseFloat((Math.floor((Number(bookPrice) - spread / 2) / tick) * tick).toFixed(tickDecimals))
-      : Number(bookPrice) - 2 * tick;  // SELL is FOK market order — price param is ignored
+      ? parseFloat(
+          (Math.floor((Number(bookPrice) - spread / 2) / tick) * tick).toFixed(
+            tickDecimals,
+          ),
+        )
+      : Number(bookPrice) - 2 * tick; // SELL is FAK into the market
     const size = signal.size;
 
     const isSell = !isBuy;
     const sdkSide = isSell ? Side.SELL : Side.BUY;
 
     log.info(
-      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}% type=${isSell ? "FOK" : "GTD"}`,
+      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}% type=${isSell ? "FAK" : "GTD"}`,
     );
 
     // 4. Place order via SDK
     //    BUY: GTD limit order (5 min expiry)
-    //    SELL: FOK market order (fill immediately or cancel — we want out)
+    //    SELL: FAK market order (fill what's available, cancel remainder — we want out)
     const resp = isSell
       ? await client.createAndPostMarketOrder(
           {
@@ -95,7 +99,7 @@ export async function executeSignal(
             side: sdkSide,
           },
           { tickSize, negRisk },
-          OrderType.FOK,
+          OrderType.FAK,
         )
       : await client.createAndPostOrder(
           {
@@ -136,7 +140,7 @@ export async function executeSignal(
       const errorStr = resp?.status ?? JSON.stringify(resp);
       const isBalanceError = errorMsg.includes("not enough balance");
 
-      // FOK no-fill (400) on a SELL means no liquidity at exit price — expected when
+      // FAK no-fill (400) on a SELL means no liquidity at exit price — expected when
       // market has resolved or price moved past our limit. Log as warn, not error.
       if (isSell && resp?.status === 400 && !isBalanceError) {
         log.warn(`SELL FOK no fill ${tag}: ${errorMsg}`);
