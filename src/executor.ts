@@ -48,12 +48,8 @@ export async function executeSignal(
   const tag = `[${signal.side} ${signal.slug} @ ${signal.price.toFixed(4)}]`;
 
   try {
-    // 1. Get market info (tick size + negRisk)
-    const { tickSize, negRisk } = await getMarketInfo(client, signal.tokenId);
-
-    // 2. Buys are market makers within the spread. Asks sell into th emarket
-    const tick = Number(tickSize);
     const isBuy = signal.side === "BUY";
+
     /** NOTE FROM DOCS
      * const buyPrice = await client.getPrice("TOKEN_ID", "BUY");
       console.log("Best ask:", buyPrice.price); // Price you'd pay to buy
@@ -62,10 +58,14 @@ export async function executeSignal(
       console.log("Best bid:", sellPrice.price); // Price you'd receive to sell
      */
 
-    const { price: bookPrice } = await client.getPrice(
-      signal.tokenId,
-      isBuy ? "BUY" : "SELL",
-    );
+    // 1. Get market info (tick size + negRisk) and live book price in parallel
+    const [{ tickSize, negRisk }, { price: bookPrice }] = await Promise.all([
+      getMarketInfo(client, signal.tokenId),
+      client.getPrice(signal.tokenId, isBuy ? "BUY" : "SELL"),
+    ]);
+
+    // 2. Buys are market makers within the spread. Asks sell into th emarket
+    const tick = Number(tickSize);
 
     // For buys: use signal price, but cap it one tick below ask if it would cross or match.
     const bookBasedPrice = isBuy
