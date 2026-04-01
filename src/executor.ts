@@ -191,8 +191,18 @@ export async function executeSignal(
 
       return true;
     } else {
+      // SDK returns { status: 400, error: "message" } on failure
+      const errorMsg: string = (resp as { error?: string })?.error ?? String(resp?.status ?? JSON.stringify(resp));
       const errorStr = resp?.status ?? JSON.stringify(resp);
-      const isBalanceError = typeof errorStr === "string" && errorStr.includes("not enough balance");
+      const isBalanceError = errorMsg.includes("not enough balance");
+
+      // FOK no-fill (400) on a SELL means no liquidity at exit price — expected when
+      // market has resolved or price moved past our limit. Log as warn, not error.
+      if (isSell && resp?.status === 400 && !isBalanceError) {
+        log.warn(`SELL FOK no fill ${tag}: ${errorMsg}`);
+        return false;
+      }
+
       const trackedPosition = signal.side === "SELL" ? positions?.getPosition(signal.tokenId) : undefined;
 
       log.recordError(`✗ Order failed`, {
