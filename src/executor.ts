@@ -63,13 +63,17 @@ export async function executeSignal(
       console.log("Best bid:", sellPrice.price); // Price you'd receive to sell
      */
 
-    const { price: bookPrice } = await client.getPrice(
-      signal.tokenId,
-      isBuy ? "BUY" : "SELL",
-    );
+    const [{ price: bookPrice }, { spread: spreadStr }] = await Promise.all([
+      client.getPrice(signal.tokenId, isBuy ? "BUY" : "SELL"),
+      client.getSpread(signal.tokenId),
+    ]);
+    const spread = Number(spreadStr);
+    const tickDecimals = tick.toString().includes(".")
+      ? tick.toString().split(".")[1].length
+      : 0;
     const orderPrice = isBuy
-      ? Number(bookPrice) - 2 * tick // 2 ticks below best ask (we're market making)
-      : Number(bookPrice) - 2 * tick; // 2 ticks below best bid (sell aggressively into bid)
+      ? parseFloat((Math.floor((Number(bookPrice) - spread / 2) / tick) * tick).toFixed(tickDecimals))
+      : Number(bookPrice) - 2 * tick;  // SELL is FOK market order — price param is ignored
     const size = signal.size;
 
     const isSell = !isBuy;
