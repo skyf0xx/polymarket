@@ -99,12 +99,11 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     status: "pending" | "live",
   ): Promise<void> {
     try {
-      const eventsPath = status === "live" ? "/v3/events/live" : "/v3/events";
       const eventsUrl =
-        `${config.oddsApiRestUrl}${eventsPath}` +
+        `${config.oddsApiRestUrl}/v3/events` +
         `?apiKey=${config.oddsApiKey}` +
         `&sport=${sport}` +
-        (status === "pending" ? `&status=pending` : "");
+        `&status=${status}`;
 
       const eventsRes = await fetch(eventsUrl, {
         signal: AbortSignal.timeout(15_000),
