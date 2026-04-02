@@ -741,6 +741,14 @@
       "sas:lac": {
         "Yes": "San Antonio Spurs",
         "No": "LA Clippers"
+      },
+      "cle:gsw": {
+        "Yes": "Cleveland Cavaliers",
+        "No": "Golden State Warriors"
+      },
+      "nop:por": {
+        "Yes": "New Orleans Pelicans",
+        "No": "Portland Trail Blazers"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
@@ -993,6 +1001,18 @@
       "pegula:cocciar": {
         "Yes": "Jessica Pegula",
         "No": "Elisabetta Cocciaretto"
+      },
+      "badosa:kalinsk": {
+        "Yes": "Paula Badosa",
+        "No": "Anna Kalinskaya"
+      },
+      "fernand:shnaide": {
+        "Yes": "Leylah Fernandez",
+        "No": "Diana Shnaider"
+      },
+      "keys:bondar": {
+        "Yes": "Madison Keys",
+        "No": "Anna Bondar"
       }
     },
     "usa-mlb": {
@@ -1115,6 +1135,14 @@
       "cle:lad": {
         "Yes": "Cleveland Guardians",
         "No": "Los Angeles Dodgers"
+      },
+      "atl:ari": {
+        "Yes": "Atlanta Braves",
+        "No": "Arizona Diamondbacks"
+      },
+      "nym:sf": {
+        "Yes": "New York Mets",
+        "No": "San Francisco Giants"
       }
     },
     "challenger-atp-challenger-yokkaichi-japan-men-singles": {
@@ -1703,6 +1731,26 @@
       "gombos:gakhov": {
         "Yes": "Norbert Gombos",
         "No": "Ivan Gakhov"
+      },
+      "alexmar:pereira": {
+        "Yes": "Alex Martinez",
+        "No": "Tiago Pereira"
+      },
+      "kolar:callejo": {
+        "Yes": "Zdenek Kolar",
+        "No": "Sergio Callejon Hernando"
+      },
+      "andalor:paulson": {
+        "Yes": "Fabrizio Andaloro",
+        "No": "Andrew Paulson"
+      },
+      "blan:hemery": {
+        "Yes": "Dali Blanch",
+        "No": "Calvin Hemery"
+      },
+      "demin:forejte": {
+        "Yes": "Yaroslav Demin",
+        "No": "Jonas Forejtek"
       }
     },
     "challenger-atp-challenger-san-luis-potosi-mexico-men-singles": {
