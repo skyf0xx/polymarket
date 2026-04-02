@@ -34,6 +34,7 @@ const HYDRATE_CONCURRENCY = 5;
 export class OddsStream extends EventEmitter<OddsStreamEvents> {
   private cache = new Map<string, SharpLine>();
   private deadEvents = new Set<string>();
+  private pendingFetches = new Set<string>();
   private ws: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempt = 0;
@@ -88,7 +89,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
     for (const l of this.cache.values()) {
       if (l.markets.h2h) withH2h++;
     }
-    log.info(`Odds cache ready: ${this.cache.size} events (${withH2h} with h2h)`);
+    log.info(
+      `Odds cache ready: ${this.cache.size} events (${withH2h} with h2h)`,
+    );
   }
 
   private async hydrateSportEvents(
@@ -267,17 +270,22 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
           this.mergeWsMarkets(existing, msg.markets);
           this.emit("odds_update", msg.id, existing);
           log.debug(`${msg.type}: updated markets for event ${msg.id}`);
-        } else if (!this.deadEvents.has(msg.id)) {
-          // Event not in cache — fetch full details (team names, sport, etc.) from REST
+        } else if (
+          !this.deadEvents.has(msg.id) &&
+          !this.pendingFetches.has(msg.id)
+        ) {
+          // Event not in cache — fetch metadata (team names, sport, etc.) from REST.
+          // REST response already includes current odds; no need to merge WS markets on top.
+          this.pendingFetches.add(msg.id);
           const line = await this.fetchEventOdds(msg.id);
+          this.pendingFetches.delete(msg.id);
           if (line) {
-            // Also merge the WS markets on top (REST may lag behind)
-            this.mergeWsMarkets(line, msg.markets);
             this.cache.set(msg.id, line);
             this.emit("odds_update", msg.id, line);
-            log.debug(`${msg.type}: added ${line.homeTeam} vs ${line.awayTeam}`, {
-              eventId: msg.id,
-            });
+            log.debug(
+              `${msg.type}: added ${line.homeTeam} vs ${line.awayTeam}`,
+              { eventId: msg.id },
+            );
           }
         }
         break;
@@ -387,7 +395,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
         const body = await res.text().catch(() => "");
         if (res.status === 404) {
           this.deadEvents.add(eventId);
-          log.debug(`fetchEventOdds: event ${eventId} not found (404), suppressing future fetches`);
+          log.debug(
+            `fetchEventOdds: event ${eventId} not found (404), suppressing future fetches`,
+          );
         } else {
           log.error(
             `fetchEventOdds failed for ${eventId}: HTTP ${res.status} ${res.statusText} — ${body}`,
@@ -465,7 +475,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
         // Replace matching points, append new ones
         const merged = [...existing];
         for (const inc of incoming) {
-          const idx = merged.findIndex((e) => Math.abs(e.point - inc.point) < 0.05);
+          const idx = merged.findIndex(
+            (e) => Math.abs(e.point - inc.point) < 0.05,
+          );
           if (idx >= 0) merged[idx] = inc;
           else merged.push(inc);
         }
@@ -490,7 +502,9 @@ export class OddsStream extends EventEmitter<OddsStreamEvents> {
           }));
         const merged = [...existing];
         for (const inc of incoming) {
-          const idx = merged.findIndex((e) => Math.abs(e.point - inc.point) < 0.05);
+          const idx = merged.findIndex(
+            (e) => Math.abs(e.point - inc.point) < 0.05,
+          );
           if (idx >= 0) merged[idx] = inc;
           else merged.push(inc);
         }
