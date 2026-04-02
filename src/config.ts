@@ -138,6 +138,9 @@ export const config = {
     return map;
   })(),
 
+  // Value Bet Poller (odds-api.io /v3/value-bets)
+  valueBetPollIntervalMs: envNum("VALUE_BET_POLL_INTERVAL_MS", 30_000),
+
   // Anthropic (for market matching)
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   matcherModel: env("MATCHER_MODEL", "claude-haiku-4-5-20251001"),

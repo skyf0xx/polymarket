@@ -113,6 +113,23 @@ export class Coordinator {
     log.info("Coordinator stopped");
   }
 
+  // ── Public API for external triggers ───────────────────────────
+
+  /**
+   * Called by ValueBetPoller when odds-api.io independently flags a market.
+   * Bypasses the debounce and evaluates immediately so the confirmed signal
+   * fires without delay. The reason is forwarded to the TradeSignal log so
+   * we can later compare edge_detected vs value_bet_confirmed performance.
+   */
+  triggerEdgeEval(
+    tokenId: string,
+    match: MatchEntry,
+    line: SharpLine,
+    reason: "value_bet_confirmed",
+  ): void {
+    this.evaluateEdge(tokenId, match, line, reason);
+  }
+
   // ── Event Handlers ──────────────────────────────────────────────
 
   /**
@@ -190,6 +207,7 @@ export class Coordinator {
     tokenId: string,
     match: MatchEntry,
     line: SharpLine,
+    reason: "edge_detected" | "value_bet_confirmed" = "edge_detected",
   ): void {
     try {
       // Skip resolved/closed markets
@@ -239,10 +257,36 @@ export class Coordinator {
       // Always log the edge check (persisted for dry-run analysis)
       logEdge(tokenId, match.slug, sharpProb, priceEntry.price, result);
 
-      if (!result.tradeable) return;
+      if (!result.tradeable) {
+        // When odds-api.io flagged this as a value bet but our calc disagrees,
+        // record the rejection so we can compare sources in post-analysis.
+        if (reason === "value_bet_confirmed") {
+          log.record("VALUE_BET_REJECTED", {
+            tokenId,
+            slug: match.slug,
+            sharpProb,
+            polyPrice: priceEntry.price,
+            grossEdge: result.grossEdge,
+            netEdge: result.netEdge,
+            skipReason: result.skipReason ?? "below_min_edge",
+          });
+        }
+        return;
+      }
 
       // Cooldown check
       if (isOnCooldown(tokenId)) {
+        if (reason === "value_bet_confirmed") {
+          log.record("VALUE_BET_REJECTED", {
+            tokenId,
+            slug: match.slug,
+            sharpProb,
+            polyPrice: priceEntry.price,
+            grossEdge: result.grossEdge,
+            netEdge: result.netEdge,
+            skipReason: "cooldown_active",
+          });
+        }
         log.debug(`Cooldown active for ${tokenId}, skipping signal`);
         return;
       }
@@ -262,7 +306,7 @@ export class Coordinator {
         size,
         edge: result.netEdge,
         kellyFraction: result.kellyFraction,
-        reason: "edge_detected",
+        reason,
       };
 
       markSignaled(tokenId);
