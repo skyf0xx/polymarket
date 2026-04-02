@@ -15,6 +15,7 @@ import { PositionTracker } from "./position-tracker.js";
 import { PendingOrders } from "./pending-orders.js";
 import { PendingSignals } from "./pending-signals.js";
 import { Coordinator } from "./coordinator.js";
+import { ValueBetPoller } from "./value-bet-poller.js";
 import { UserStream } from "./user-stream.js";
 import { getUsdcBalance } from "./wallet.js";
 import { readFileSync, existsSync, writeFileSync, renameSync } from "fs";
@@ -164,7 +165,16 @@ async function main(): Promise<void> {
   const userStream = new UserStream(positions, pendingOrders, pendingSignals, matcher, config.credsFile);
   userStream.start();
 
-  // 12. Health logging
+  // 12. Start value-bet poller (market discovery + confirmed signal source)
+  const valueBetPoller = new ValueBetPoller(
+    matcher,
+    odds,
+    coordinator,
+    fetchPolymarketSportsMarkets,
+  );
+  valueBetPoller.start();
+
+  // 13. Health logging
   const healthTimer = startHealthLogging(odds, prices, matcher, positions, coordinator);
 
   log.info("═══════════════════════════════════════════════");
@@ -176,6 +186,7 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     log.info(`Received ${signal}, shutting down...`);
     clearInterval(healthTimer);
+    valueBetPoller.destroy();
     coordinator.destroy();
     userStream.destroy();
     prices.destroy();

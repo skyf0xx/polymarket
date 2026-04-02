@@ -102,7 +102,7 @@ export interface TradeSignal {
   size: number; // shares
   edge: number; // net edge that triggered this
   kellyFraction: number;
-  reason: "edge_detected" | "exit_signal";
+  reason: "edge_detected" | "exit_signal" | "value_bet_confirmed";
 }
 
 // ── Polymarket Market Metadata ──────────────────────────────────
