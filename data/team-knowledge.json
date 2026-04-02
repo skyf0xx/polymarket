@@ -969,6 +969,14 @@
       "fernand:kuderme": {
         "Yes": "Fernandez, Leylah",
         "No": "Kudermetova, Polina"
+      },
+      "stearns:kessler": {
+        "Yes": "Peyton Stearns",
+        "No": "McCartney Kessler"
+      },
+      "pegula:cocciar": {
+        "Yes": "Jessica Pegula",
+        "No": "Elisabetta Cocciaretto"
       }
     },
     "usa-mlb": {
@@ -1215,6 +1223,14 @@
       "tirante:mcdonal": {
         "Yes": "Tirante, Thiago Agustin",
         "No": "McDonald, Mackenzie"
+      },
+      "michels:popyrin": {
+        "Yes": "Alex Michelsen",
+        "No": "Alexei Popyrin"
+      },
+      "burruch:nakashi": {
+        "Yes": "Roman Andres Burruchaga",
+        "No": "Brandon Nakashima"
       }
     },
     "challenger-atp-challenger-morelia-mexico-men-singles": {
@@ -1347,6 +1363,10 @@
       "papamic:semenis": {
         "Yes": "Despina Papamichail",
         "No": "Darja Semenistaja"
+      },
+      "udvardy:pareja": {
+        "Yes": "Udvardy, Panna",
+        "No": "Pareja, Julieta"
       }
     },
     "atp-atp-miami-usa-men-singles": {
@@ -1419,6 +1439,14 @@
       "shevche:zandsch": {
         "Yes": "Alexander Shevchenko",
         "No": "Botic van de Zandschulp"
+      },
+      "dzumhur:zandsch": {
+        "Yes": "Damir Dzumhur",
+        "No": "Botic van de Zandschulp"
+      },
+      "molcan:navone": {
+        "Yes": "Alex Molcan",
+        "No": "Mariano Navone"
       }
     },
     "challenger-atp-challenger-miyazaki-japan-men-singles": {
@@ -1575,6 +1603,14 @@
       "trungel:majchrz": {
         "Yes": "Marco Trungelliti",
         "No": "Kamil Majchrzak"
+      },
+      "kopriva:muller": {
+        "Yes": "Vit Kopriva",
+        "No": "Alexandre Muller"
+      },
+      "moutet:trungel": {
+        "Yes": "Corentin Moutet",
+        "No": "Marco Trungelliti"
       }
     },
     "challenger-atp-challenger-barletta-italy-men-singles": {
@@ -1721,6 +1757,14 @@
       "zhukaye:mart": {
         "Yes": "Zhukayev, Beibit",
         "No": "Martin, Dan"
+      },
+      "alujas:mejia": {
+        "Yes": "Rodrigo Alujas",
+        "No": "Nicolas Mejia"
+      },
+      "pacheco:pavlovi": {
+        "Yes": "Rodrigo Pacheco Mendez",
+        "No": "Luka Pavlovic"
       }
     },
     "challenger-atp-challenger-sao-leopoldo-brazil-men-singles": {
@@ -1777,8 +1821,12 @@
         "No": "Diaz Acosta, Facundo"
       },
       "rodrig:santos": {
-        "Yes": "Lorenzo Joaquin Rodriguez",
-        "No": "Paulo Andre Saraiva Dos Santos"
+        "Yes": "Rodriguez, Lorenzo Joaquin",
+        "No": "Saraiva Dos Santos, Paulo Andre"
+      },
+      "dellie:nikles": {
+        "Yes": "Dellien, Murkel",
+        "No": "Nikles, Johan"
       }
     },
     "england-premier-league": {
