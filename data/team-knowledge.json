@@ -725,6 +725,22 @@
       "mil:hou": {
         "Yes": "Milwaukee Bucks",
         "No": "Houston Rockets"
+      },
+      "min:det": {
+        "Yes": "Minnesota Timberwolves",
+        "No": "Detroit Pistons"
+      },
+      "lal:okc": {
+        "Yes": "Los Angeles Lakers",
+        "No": "Oklahoma City Thunder"
+      },
+      "phx:cha": {
+        "Yes": "Phoenix Suns",
+        "No": "Charlotte Hornets"
+      },
+      "sas:lac": {
+        "Yes": "San Antonio Spurs",
+        "No": "LA Clippers"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
