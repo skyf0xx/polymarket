@@ -749,6 +749,42 @@
       "nop:por": {
         "Yes": "New Orleans Pelicans",
         "No": "Portland Trail Blazers"
+      },
+      "ind:cha": {
+        "Yes": "Indiana Pacers",
+        "No": "Charlotte Hornets"
+      },
+      "min:phi": {
+        "Yes": "Minnesota Timberwolves",
+        "No": "Philadelphia 76ers"
+      },
+      "atl:bkn": {
+        "Yes": "Atlanta Hawks",
+        "No": "Brooklyn Nets"
+      },
+      "chi:nyk": {
+        "Yes": "Chicago Bulls",
+        "No": "New York Knicks"
+      },
+      "uta:hou": {
+        "Yes": "Utah Jazz",
+        "No": "Houston Rockets"
+      },
+      "tor:mem": {
+        "Yes": "Toronto Raptors",
+        "No": "Memphis Grizzlies"
+      },
+      "bos:mil": {
+        "Yes": "Boston Celtics",
+        "No": "Milwaukee Bucks"
+      },
+      "orl:dal": {
+        "Yes": "Orlando Magic",
+        "No": "Dallas Mavericks"
+      },
+      "nop:sac": {
+        "Yes": "New Orleans Pelicans",
+        "No": "Sacramento Kings"
       }
     },
     "challenger-atp-challenger-naples-italy-men-singles": {
@@ -1017,6 +1053,10 @@
       "jovic:kenin": {
         "Yes": "Jovic, Iva",
         "No": "Kenin, Sofia"
+      },
+      "pegula:shnaide": {
+        "Yes": "Pegula, Jessica",
+        "No": "Shnaider, Diana"
       }
     },
     "usa-mlb": {
@@ -1423,6 +1463,10 @@
       "udvardy:pareja": {
         "Yes": "Udvardy, Panna",
         "No": "Pareja, Julieta"
+      },
+      "ortenzi:riera": {
+        "Yes": "Ortenzi, Jazmin",
+        "No": "Riera, Julia"
       }
     },
     "atp-atp-miami-usa-men-singles": {
@@ -1679,6 +1723,10 @@
       "moutet:trungel": {
         "Yes": "Corentin Moutet",
         "No": "Marco Trungelliti"
+      },
+      "muller:jodar": {
+        "Yes": "Muller, Alexandre",
+        "No": "Jodar, Rafael"
       }
     },
     "challenger-atp-challenger-barletta-italy-men-singles": {
@@ -1745,6 +1793,14 @@
       "cecchin:gill": {
         "Yes": "Cecchinato, Marco",
         "No": "Gill, Felix"
+      },
+      "fatic:sachko": {
+        "Yes": "Fatic, Nerman",
+        "No": "Sachko, Vitaliy"
+      },
+      "glinka:coppeja": {
+        "Yes": "Glinka, Daniil",
+        "No": "Coppejans, Kimmer"
       }
     },
     "challenger-atp-challenger-menorca-spain-men-singles": {
@@ -1775,6 +1831,22 @@
       "demin:forejte": {
         "Yes": "Yaroslav Demin",
         "No": "Jonas Forejtek"
+      },
+      "canas:blan": {
+        "Yes": "Moro Canas, Alejandro",
+        "No": "Blanch, Dali"
+      },
+      "forejte:baena": {
+        "Yes": "Forejtek, Jonas",
+        "No": "Carballes Baena, Roberto"
+      },
+      "engel:quilez": {
+        "Yes": "Engel, Justin",
+        "No": "Sanchez Quilez, Alejo"
+      },
+      "martin:brancac": {
+        "Yes": "Martineau, Matteo",
+        "No": "Brancaccio, Raul"
       }
     },
     "challenger-atp-challenger-san-luis-potosi-mexico-men-singles": {
