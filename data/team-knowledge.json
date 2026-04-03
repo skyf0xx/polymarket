@@ -1013,6 +1013,10 @@
       "keys:bondar": {
         "Yes": "Madison Keys",
         "No": "Anna Bondar"
+      },
+      "jovic:kenin": {
+        "Yes": "Jovic, Iva",
+        "No": "Kenin, Sofia"
       }
     },
     "usa-mlb": {
@@ -1275,6 +1279,14 @@
       "burruch:nakashi": {
         "Yes": "Roman Andres Burruchaga",
         "No": "Brandon Nakashima"
+      },
+      "shelton:tirante": {
+        "Yes": "Shelton, Ben",
+        "No": "Tirante, Thiago Agustin"
+      },
+      "etcheve:paul": {
+        "Yes": "Etcheverry, Tomas Martin",
+        "No": "Paul, Tommy"
       }
     },
     "challenger-atp-challenger-morelia-mexico-men-singles": {
@@ -1533,6 +1545,18 @@
       "moriya:matsuda": {
         "Yes": "Hiroki Moriya",
         "No": "Koki Matsuda"
+      },
+      "ilagan:broady": {
+        "Yes": "Ilagan, Andre",
+        "No": "Broady, Liam"
+      },
+      "tunglin:moriya": {
+        "Yes": "Wu, Tung-Lin",
+        "No": "Moriya, Hiroki"
+      },
+      "milic:ellis": {
+        "Yes": "Milic, Ognjen",
+        "No": "Ellis, Blake"
       }
     },
     "atp-atp-marrakech-morocco-men-singles": {
@@ -1891,6 +1915,10 @@
       "dellie:nikles": {
         "Yes": "Dellien, Murkel",
         "No": "Nikles, Johan"
+      },
+      "dellie:santos": {
+        "Yes": "Dellien, Murkel",
+        "No": "Saraiva Dos Santos, Paulo Andre"
       }
     },
     "england-premier-league": {
