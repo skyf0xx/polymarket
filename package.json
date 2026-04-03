@@ -5,7 +5,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:vb": "node dist/value-bet-index.js",
     "dev": "tsx src/index.ts",
+    "dev:vb": "tsx src/value-bet-index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

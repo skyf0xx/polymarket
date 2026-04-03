@@ -229,16 +229,20 @@ export class UserStream {
       // Log confirmed fill to entries.jsonl (uses signal-time metadata)
       const meta = this.pendingSignals.consume(tokenId);
       if (meta) {
-        appendBuyEntry(
-          meta.tokenSide,
-          meta.match,
-          meta.line,
-          price,   // actual fill price, not signal-time estimate
-          meta.sharpProb,
-          meta.netEdge,
-          meta.kellyFraction,
-          size,    // actual filled size
-        );
+        if (meta.line !== null && meta.sharpProb !== null) {
+          appendBuyEntry(
+            meta.tokenSide,
+            meta.match,
+            meta.line,
+            price,   // actual fill price, not signal-time estimate
+            meta.sharpProb,
+            meta.netEdge,
+            meta.kellyFraction,
+            size,    // actual filled size
+          );
+        } else {
+          log.debug(`Value-bet fill for ${tokenId} — no sharp line to log entry`);
+        }
       } else {
         log.warn(`BUY fill for ${tokenId} has no pending signal metadata — entry not logged`);
       }
