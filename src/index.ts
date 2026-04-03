@@ -1,35 +1,27 @@
 // src/index.ts
-// Entry point — init CLOB client, instantiate all modules, run startup sequence.
+// Entry point: init wallet, hydrate data, start poller + maintenance.
 
 import { ethers } from "ethers";
 import { ClobClient, ApiKeyCreds } from "@polymarket/clob-client";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import { OddsStream } from "./odds-stream.js";
-import { PriceCache } from "./price-cache.js";
-import {
-  MarketMatcher,
-  fetchPolymarketSportsMarkets,
-} from "./market-matcher.js";
+import { MarketMatcher, fetchPolymarketSportsMarkets } from "./market-matcher.js";
 import { PositionTracker } from "./position-tracker.js";
-import { PendingOrders } from "./pending-orders.js";
-import { PendingSignals } from "./pending-signals.js";
-import { Coordinator } from "./coordinator.js";
-import { ValueBetPoller } from "./value-bet-poller.js";
+import { OrderTracker } from "./order-tracker.js";
 import { UserStream } from "./user-stream.js";
+import { MarketStream } from "./market-stream.js";
+import { startPoller, stopPoller } from "./poller.js";
+import { startMaintenance, stopMaintenance } from "./maintenance.js";
 import { getUsdcBalance } from "./wallet.js";
 import { readFileSync, existsSync, writeFileSync, renameSync } from "fs";
 
 const log = createLogger("main");
 
-const CHAIN_ID = 137; // Polygon mainnet
+const CHAIN_ID = 137;
 
-// ── CLOB Client Setup ─────────────────────────────────────────────
+// -- CLOB Client Setup --------------------------------------------------------
 
-function makeClobClient(
-  signer: ethers.Wallet,
-  creds?: ApiKeyCreds,
-): ClobClient {
+function makeClobClient(signer: ethers.Wallet, creds?: ApiKeyCreds): ClobClient {
   return new ClobClient(
     config.clobApiUrl,
     CHAIN_ID,
@@ -44,8 +36,8 @@ async function initClobClient(): Promise<ClobClient> {
   const provider = new ethers.providers.JsonRpcProvider(config.polygonRpc);
   const signer = new ethers.Wallet(config.privateKey, provider);
 
-  log.info(`Signer address: ${signer.address}`);
-  log.info(`Funder address: ${config.funderAddress}`);
+  log.info(`Signer: ${signer.address}`);
+  log.info(`Funder: ${config.funderAddress}`);
 
   if (existsSync(config.credsFile)) {
     try {
@@ -57,7 +49,6 @@ async function initClobClient(): Promise<ClobClient> {
     }
   }
 
-  // Derive/create new credentials
   log.info("Deriving API credentials...");
   const creds = await makeClobClient(signer).createOrDeriveApiKey();
   const tmp = config.credsFile + ".tmp";
@@ -67,130 +58,99 @@ async function initClobClient(): Promise<ClobClient> {
   return makeClobClient(signer, creds);
 }
 
-// ── Health Logging ────────────────────────────────────────────────
-
-function startHealthLogging(
-  odds: OddsStream,
-  prices: PriceCache,
-  matcher: MarketMatcher,
-  positions: PositionTracker,
-  coordinator: Coordinator,
-): ReturnType<typeof setInterval> {
-  return setInterval(() => {
-    log.info("HEALTH", {
-      oddsEvents: odds.size,
-      priceTokens: prices.size,
-      matches: matcher.size,
-      tradeableMatches: matcher.getTradeableMatches().length,
-      openPositions: positions.size,
-      totalDeployed: positions.getTotalDeployed(),
-      dryRun: config.dryRun,
-      bankroll: coordinator.bankroll,
-    });
-  }, 60_000); // every minute
-}
-
-// ── Main ──────────────────────────────────────────────────────────
+// -- Main ---------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  log.info("═══════════════════════════════════════════════");
-  log.info("  Edge Detection Bot — Starting Up");
-  log.info(`  DRY_RUN=${config.dryRun}  MARKET_MAKER=${config.marketMaker}`);
-  log.info(`  Odds API sports: ${config.oddsApiSports.join(", ")}`);
-  log.info(`  Polymarket sports types: ${config.polymarketSportsTypes.join(", ")}`);
-  log.info(`  Min edge: ${(config.minEdge * 100).toFixed(1)}%`);
-  log.info(`  Kelly fraction: ${config.kellyFraction}`);
-  log.info("═══════════════════════════════════════════════");
+  log.info("==============================================");
+  log.info("  Value-Bet Bot");
+  log.info(`  DRY_RUN=${config.dryRun}  Sports: ${config.oddsApiSports.join(", ")}`);
+  log.info(`  Kelly: ${config.kellyFraction}  Cooldown: ${config.cooldownSeconds}s`);
+  log.info("==============================================");
 
   // 1. Init CLOB client
   const client = await initClobClient();
 
-  // 2. Fetch on-chain bankroll
-  log.info("Fetching on-chain USDC balance...");
-  const bankroll = await getUsdcBalance();
+  // 2. Fetch bankroll
+  let bankroll = await getUsdcBalance();
   if (bankroll === null || bankroll <= 0) {
-    log.error("Could not fetch USDC balance or balance is zero — aborting");
+    log.error("Could not fetch USDC balance or balance is zero -- aborting");
     process.exit(1);
   }
-  log.info(`  Bankroll: $${bankroll.toFixed(2)}`);
+  log.info(`Bankroll: $${bankroll.toFixed(2)}`);
 
   if (config.oddsApiSports.length === 0) {
-    log.error("ODDS_API_SPORTS is empty — set comma-separated sport keys (e.g. basketball,football,american-football)");
+    log.error("ODDS_API_SPORTS is empty");
     process.exit(1);
   }
 
   // 3. Instantiate modules
-  const odds = new OddsStream();
-  const prices = new PriceCache();
   const matcher = new MarketMatcher();
   const positions = new PositionTracker();
-  const pendingOrders = new PendingOrders();
-  const pendingSignals = new PendingSignals();
-  const coordinator = new Coordinator(client, odds, prices, matcher, positions, pendingOrders, pendingSignals, bankroll);
+  const orders = new OrderTracker();
 
-  // 4. Fetch Polymarket sports markets from Gamma
-  log.info("Fetching active sports markets from Gamma...");
-  const polymarkets = await fetchPolymarketSportsMarkets();
-  log.info(`Found ${polymarkets.length} active sports market(s)`);
-
-  // 5. Hydrate team knowledge from Gamma Teams API
-  log.info(`Hydrating team knowledge for leagues: [${config.gammaLeagues.join(", ")}]`);
+  // 4. Hydrate (lightweight — no odds cache, just positions + teams)
+  log.info("Hydrating...");
   await matcher.hydrateTeams(config.gammaLeagues);
-
-  // 6. Hydrate positions from Polymarket Data API (critical — no WS alternative)
-  log.info("Hydrating positions from Data API...");
   await positions.hydrate();
 
-  // 7. Start odds stream (REST hydrate then WS — cache pre-populated before matching)
-  log.info("Starting odds stream...");
-  await odds.start();
+  // Initial match cycle with existing Gamma markets (odds events will
+  // be populated by the first poller cycle from value-bets)
+  const polymarkets = await fetchPolymarketSportsMarkets();
+  log.info(`${polymarkets.length} active sports market(s)`);
 
-  // 8. Run initial match cycle (odds cache is now populated)
-  log.info("Running initial market match cycle...");
-  const { newMatches, total } = await matcher.runMatchCycle(
-    odds.getAllLines(),
-    polymarkets,
-  );
-  log.info(`Initial matching: ${newMatches} new, ${total} total matches`);
+  const { newMatches, total } = await matcher.runMatchCycle(polymarkets);
+  log.info(`Matching: ${newMatches} new, ${total} total`);
 
-  // 9. Start price cache with matched token IDs (WS with initial_dump snapshots)
-  const tokenIds = matcher.getAllTokenIds();
-  log.info(`Starting price cache for ${tokenIds.length} token(s)...`);
-  prices.start(tokenIds);
-
-  // 10. Start coordinator (wires event listeners + maintenance timer)
-  coordinator.start();
-
-  // 11. Start user stream (authenticated WS for trade confirmations)
-  const userStream = new UserStream(positions, pendingOrders, pendingSignals, matcher, config.credsFile);
+  // 5. Start user stream (fill confirmations)
+  const userStream = new UserStream(positions, orders, matcher, config.credsFile);
   userStream.start();
 
-  // 12. Start value-bet poller (market discovery + confirmed signal source)
-  const valueBetPoller = new ValueBetPoller(
+  // 6. Start market stream (new_market + market_resolved push updates)
+  const marketStream = new MarketStream(matcher);
+  marketStream.start();
+
+  // 7. Start poller (sole signal source — also feeds odds events to matcher)
+  startPoller({
+    client,
     matcher,
-    odds,
-    coordinator,
-    fetchPolymarketSportsMarkets,
-  );
-  valueBetPoller.start();
+    orders,
+    getBankroll: () => bankroll!,
+  });
 
-  // 13. Health logging
-  const healthTimer = startHealthLogging(odds, prices, matcher, positions, coordinator);
+  // 8. Start maintenance (refresh data + exit sweep every 5 min)
+  startMaintenance({
+    client,
+    matcher,
+    positions,
+    orders,
+    getBankroll: () => bankroll!,
+    setBankroll: (b) => { bankroll = b; },
+  });
 
-  log.info("═══════════════════════════════════════════════");
-  log.info("  Bot is live. Listening for edge signals.");
-  log.info("═══════════════════════════════════════════════");
+  // 9. Health logging
+  const healthTimer = setInterval(() => {
+    log.info("HEALTH", {
+      matches: matcher.size,
+      positions: positions.size,
+      pending: orders.pendingCount,
+      bankroll,
+      dryRun: config.dryRun,
+    });
+  }, 60_000);
 
-  // ── Graceful Shutdown ───────────────────────────────────────────
+  log.info("==============================================");
+  log.info("  Bot is live. Awaiting value-bet signals.");
+  log.info("==============================================");
+
+  // -- Graceful Shutdown -------------------------------------------------------
 
   const shutdown = (signal: string) => {
     log.info(`Received ${signal}, shutting down...`);
     clearInterval(healthTimer);
-    valueBetPoller.destroy();
-    coordinator.destroy();
+    stopPoller();
+    stopMaintenance();
     userStream.destroy();
-    prices.destroy();
-    odds.destroy();
+    marketStream.destroy();
     log.info("Shutdown complete");
     process.exit(0);
   };
@@ -200,6 +160,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  log.error(`Fatal startup error: ${err.message ?? err}`);
+  log.error(`Fatal: ${err.message ?? err}`);
   process.exit(1);
 });

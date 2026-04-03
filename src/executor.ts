@@ -1,17 +1,17 @@
 // src/executor.ts
-// Receives a TradeSignal from the coordinator and places a GTD order on Polymarket.
-// Price is locked at edge-detection time — order fills or expires in 5 minutes.
+// Places orders on Polymarket CLOB.
+// BUY: GTD limit order (5-min expiry, inside the spread)
+// SELL: FAK market order (fill or cancel)
 
 import { ClobClient, OrderType, Side } from "@polymarket/clob-client";
 import type { TickSize } from "@polymarket/clob-client";
 import { createLogger } from "./logger.js";
-import type { PendingOrders } from "./pending-orders.js";
-import type { PositionTracker } from "./position-tracker.js"; // type-only: only used for parameter typing
+import type { OrderTracker } from "./order-tracker.js";
 import type { TradeSignal } from "./types.js";
 
 const log = createLogger("executor");
 
-// ── Market Info Cache ─────────────────────────────────────────────
+// -- Market Info Cache --------------------------------------------------------
 
 interface MarketInfo {
   tickSize: TickSize;
@@ -20,10 +20,7 @@ interface MarketInfo {
 
 const marketCache = new Map<string, MarketInfo>();
 
-async function getMarketInfo(
-  client: ClobClient,
-  tokenId: string,
-): Promise<MarketInfo> {
+async function getMarketInfo(client: ClobClient, tokenId: string): Promise<MarketInfo> {
   const cached = marketCache.get(tokenId);
   if (cached) return cached;
 
@@ -37,65 +34,40 @@ async function getMarketInfo(
   return info;
 }
 
-// ── Main Execute Function ─────────────────────────────────────────
+// -- Execute ------------------------------------------------------------------
 
 export async function executeSignal(
   client: ClobClient,
   signal: TradeSignal,
-  pendingOrders?: PendingOrders,
-  positions?: PositionTracker,
+  orders?: OrderTracker,
 ): Promise<boolean> {
   const tag = `[${signal.side} ${signal.slug} @ ${signal.price.toFixed(4)}]`;
 
   try {
     const isBuy = signal.side === "BUY";
 
-    /** NOTE FROM DOCS
-     * const buyPrice = await client.getPrice("TOKEN_ID", "BUY");
-      console.log("Best ask:", buyPrice.price); // Price you'd pay to buy
-
-      const sellPrice = await client.getPrice("TOKEN_ID", "SELL");
-      console.log("Best bid:", sellPrice.price); // Price you'd receive to sell
-     */
-
-    // 1. Get market info (tick size + negRisk) and live book price in parallel
     const [{ tickSize, negRisk }, { price: bookPrice }] = await Promise.all([
       getMarketInfo(client, signal.tokenId),
       client.getPrice(signal.tokenId, isBuy ? "BUY" : "SELL"),
     ]);
 
-    // 2. Buys are market makers within the spread. Asks sell into th emarket
     const tick = Number(tickSize);
 
-    // For buys: use signal price, but cap it one tick below ask if it would cross or match.
-    const bookBasedPrice = isBuy
-      ? Math.min(signal.price, Number(bookPrice) - tick) // Lesser of the signal price or just below the ask
-      : Number(bookPrice) - 2 * tick; // SELL is FAK into the market
-    const orderPrice = bookBasedPrice;
-    const size = signal.size;
+    // BUY: post inside the spread (lesser of signal price or just below ask)
+    // SELL: FAK into the market
+    const orderPrice = isBuy
+      ? Math.min(signal.price, Number(bookPrice) - tick)
+      : Number(bookPrice) - 2 * tick;
 
-    const isSell = !isBuy;
-    const sdkSide = isSell ? Side.SELL : Side.BUY;
+    const size = signal.size;
+    const sdkSide = isBuy ? Side.BUY : Side.SELL;
 
     log.info(
-      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}% type=${isSell ? "FAK" : "GTD"}`,
+      `EXEC ${tag} order_price=${orderPrice.toFixed(4)} size=${size} edge=${(signal.edge * 100).toFixed(2)}% type=${isBuy ? "GTD" : "FAK"}`,
     );
 
-    // 4. Place order via SDK
-    //    BUY: GTD limit order (5 min expiry)
-    //    SELL: FAK market order (fill what's available, cancel remainder — we want out)
-    const resp = isSell
-      ? await client.createAndPostMarketOrder(
-          {
-            tokenID: signal.tokenId,
-            price: orderPrice, // worst acceptable price (bestBid)
-            amount: size,
-            side: sdkSide,
-          },
-          { tickSize, negRisk },
-          OrderType.FAK,
-        )
-      : await client.createAndPostOrder(
+    const resp = isBuy
+      ? await client.createAndPostOrder(
           {
             tokenID: signal.tokenId,
             price: orderPrice,
@@ -105,10 +77,20 @@ export async function executeSignal(
           },
           { tickSize, negRisk },
           OrderType.GTD,
+        )
+      : await client.createAndPostMarketOrder(
+          {
+            tokenID: signal.tokenId,
+            price: orderPrice,
+            amount: size,
+            side: sdkSide,
+          },
+          { tickSize, negRisk },
+          OrderType.FAK,
         );
 
     if (resp?.success) {
-      log.record(`✓ Order placed`, {
+      log.record(`Order placed`, {
         tokenId: signal.tokenId,
         slug: signal.slug,
         side: signal.side,
@@ -120,33 +102,24 @@ export async function executeSignal(
         success: true,
       });
 
-      // Track pending notional so position cap accounts for resting orders
-      if (pendingOrders && resp.orderID && signal.side === "BUY") {
-        pendingOrders.add(resp.orderID, signal.tokenId, orderPrice, size);
+      if (orders && resp.orderID && isBuy) {
+        orders.trackOrder(resp.orderID, signal.tokenId, orderPrice, size);
       }
 
       return true;
     } else {
-      // SDK returns { status: 400, error: "message" } on failure
       const errorMsg: string =
         (resp as { error?: string })?.error ??
         String(resp?.status ?? JSON.stringify(resp));
-      const errorStr = resp?.status ?? JSON.stringify(resp);
       const isBalanceError = errorMsg.includes("not enough balance");
 
-      // FAK no-fill (400) on a SELL means no liquidity at exit price — expected when
-      // market has resolved or price moved past our limit. Log as warn, not error.
-      if (isSell && resp?.status === 400 && !isBalanceError) {
-        log.warn(`SELL FOK no fill ${tag}: ${errorMsg}`);
+      // FAK no-fill on SELL is expected when market has resolved
+      if (!isBuy && resp?.status === 400 && !isBalanceError) {
+        log.warn(`SELL FAK no fill ${tag}: ${errorMsg}`);
         return false;
       }
 
-      const trackedPosition =
-        signal.side === "SELL"
-          ? positions?.getPosition(signal.tokenId)
-          : undefined;
-
-      log.recordError(`✗ Order failed`, {
+      log.recordError(`Order failed`, {
         tokenId: signal.tokenId,
         slug: signal.slug,
         side: signal.side,
@@ -155,33 +128,14 @@ export async function executeSignal(
         edge: signal.edge,
         reason: signal.reason,
         success: false,
-        error: errorStr,
-        ...(isBalanceError &&
-          signal.side === "SELL" && {
-            debug_balance_error: {
-              tracker_size: trackedPosition?.size ?? null,
-              tracker_avg_price: trackedPosition?.avgPrice ?? null,
-              tracker_total_cost: trackedPosition?.totalCost ?? null,
-              order_size: size,
-              order_price: orderPrice,
-              // raw CLOB amounts: makerAmount = shares * 1e6, takerAmount = USDC * 1e6
-              expected_maker_amount: Math.round(size * 1e6),
-              expected_taker_amount: Math.round(size * orderPrice * 1e6),
-            },
-          }),
+        error: resp?.status ?? JSON.stringify(resp),
       });
-
-      // Stale position → re-hydrate so we stop retrying with wrong size
-      if (isBalanceError && positions) {
-        log.warn(`Balance mismatch — re-hydrating positions`);
-        positions.hydrate().catch(() => {});
-      }
 
       return false;
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    log.error(`✗ Error executing ${tag}: ${message}`);
+    log.error(`Error executing ${tag}: ${message}`);
     return false;
   }
 }

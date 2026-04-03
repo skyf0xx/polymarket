@@ -17,7 +17,7 @@ import type {
   MatchEntry,
   MarketType,
   MatchConfidence,
-  SharpLine,
+  OddsEvent,
   PolymarketMarket,
 } from "./types.js";
 const log = createLogger("matcher");
@@ -28,6 +28,9 @@ export class MarketMatcher {
   private table = new Map<string, MatchEntry>();
   private tokenIndex = new Map<string, MatchEntry>(); // tokenId → MatchEntry
   private knowledge = new TeamKnowledge();
+  private _oddsEvents: OddsEvent[] = [];
+  private _knownMarkets = new Map<string, PolymarketMarket>(); // slug → market
+
   constructor() {
     this.loadFromDisk();
   }
@@ -35,6 +38,39 @@ export class MarketMatcher {
   /** Hydrate team knowledge from the Gamma Teams API. Call before runMatchCycle. */
   async hydrateTeams(leagues: string[]): Promise<void> {
     await this.knowledge.hydrate(leagues);
+  }
+
+  /**
+   * Register a market from the WS new_market event (or initial Gamma fetch).
+   * Stored in the known-markets cache for use by runMatchCycle / runDiscovery.
+   */
+  addMarket(pm: PolymarketMarket): void {
+    this._knownMarkets.set(pm.slug, pm);
+  }
+
+  /** Mark all matches for a given token ID inactive (called on market_resolved WS event). */
+  markResolvedByTokenId(tokenId: string): void {
+    const entry = this.tokenIndex.get(tokenId);
+    if (!entry) return;
+    if (entry.active) {
+      entry.active = false;
+      log.info(`Market ${entry.slug} resolved — marked inactive`);
+      this.saveToDisk();
+    }
+  }
+
+  /** All known (unmatched) markets from the WS/Gamma cache. */
+  getKnownMarkets(): PolymarketMarket[] {
+    return [...this._knownMarkets.values()];
+  }
+
+  /** Update the known odds events (called by poller with value-bet event details). */
+  setOddsEvents(events: OddsEvent[]): void {
+    // Merge with existing, dedup by id, prefer newer entries
+    const map = new Map<string, OddsEvent>();
+    for (const e of this._oddsEvents) map.set(e.id, e);
+    for (const e of events) map.set(e.id, e);
+    this._oddsEvents = [...map.values()];
   }
 
   // ── Public API ──────────────────────────────────────────────────
@@ -84,11 +120,17 @@ export class MarketMatcher {
    * 1. Check which Polymarket markets are already matched (Tier 1)
    * 2. Send unmatched ones to the LLM in sequential batches (Tier 2)
    * 3. Validate and persist results
+   *
+   * Uses odds events previously set via setOddsEvents().
    */
   async runMatchCycle(
-    oddsLines: Map<string, SharpLine>,
     polymarkets: PolymarketMarket[],
   ): Promise<{ newMatches: number; total: number }> {
+    // Seed the known-markets cache so WS-based discovery can use it later
+    for (const pm of polymarkets) {
+      this._knownMarkets.set(pm.slug, pm);
+    }
+
     const unmatched: PolymarketMarket[] = [];
     for (const pm of polymarkets) {
       if (this.table.has(pm.slug)) continue;
@@ -99,22 +141,7 @@ export class MarketMatcher {
       return { newMatches: 0, total: this.table.size };
     }
 
-    // Build slim Odds API event list — deduplicated by eventId (oddsLines has one
-    // entry per market type per event, so h2h/spreads/totals all share the same game).
-    const seenEventIds = new Set<string>();
-    const oddsEvents: Array<{ id: string; sport: string; league: string; home: string; away: string; time: string }> = [];
-    for (const line of oddsLines.values()) {
-      if (seenEventIds.has(line.eventId)) continue;
-      seenEventIds.add(line.eventId);
-      oddsEvents.push({
-        id: line.eventId,
-        sport: line.sportKey,
-        league: line.leagueSlug,
-        home: line.homeTeam,
-        away: line.awayTeam,
-        time: new Date(line.commence).toISOString(),
-      });
-    }
+    const oddsEvents = this._oddsEvents;
 
     if (oddsEvents.length === 0) {
       log.warn("No odds events available — skipping matcher");
@@ -136,14 +163,15 @@ export class MarketMatcher {
       }
       const det = this.knowledge.tryMatch(pm, oddsEvents, now);
       if (det) {
-        const oddsLine = oddsLines.get(det.oddsApiEventId);
+        const oddsEvent = oddsEvents.find((e) => e.id === det.oddsApiEventId);
+        const commence = oddsEvent ? new Date(oddsEvent.time).getTime() : 0;
         const timeDiff = Math.abs(
-          (oddsLine?.commence ?? 0) - new Date(pm.endDate ?? 0).getTime(),
+          commence - new Date(pm.endDate ?? 0).getTime(),
         );
-        if (oddsLine && timeDiff <= 48 * 60 * 60 * 1_000) {
+        if (oddsEvent && timeDiff <= 48 * 60 * 60 * 1_000) {
           const entry: MatchEntry = {
             ...det,
-            commence: oddsLine.commence,
+            commence,
             active: pm.active,
           };
           this.table.set(pm.slug, entry);
@@ -174,13 +202,10 @@ export class MarketMatcher {
     log.info(`${needsLlm.length} market(s) need LLM matching...`);
 
     const BATCH_SIZE = 10;
-    // Anthropic free tier: 50k input tokens/min. Haiku prompt ~1500 tokens/batch.
-    // Allow max 30k tokens/min (60% of limit) → 20s/batch minimum.
-    // Only applied between batches that actually call the LLM (skipped batches don't count).
     const TOKEN_BUDGET_PER_MIN = 30_000;
     const APPROX_TOKENS_PER_BATCH = 1_500;
-    const MIN_DELAY_MS = Math.ceil((APPROX_TOKENS_PER_BATCH / TOKEN_BUDGET_PER_MIN) * 60_000); // ~3s
-    const LLM_INTER_BATCH_DELAY_MS = Math.max(MIN_DELAY_MS, 20_000); // floor at 20s to be safe
+    const MIN_DELAY_MS = Math.ceil((APPROX_TOKENS_PER_BATCH / TOKEN_BUDGET_PER_MIN) * 60_000);
+    const LLM_INTER_BATCH_DELAY_MS = Math.max(MIN_DELAY_MS, 20_000);
     const batches = chunk(needsLlm, BATCH_SIZE);
     let newCount = deterministicCount;
     let totalLlmMatches = 0;
@@ -194,11 +219,6 @@ export class MarketMatcher {
 
       try {
         // Pre-filter odds events to only those relevant to this batch.
-        // Resolve team names from slug abbreviations via team knowledge,
-        // then match odds events by team name + date proximity.
-        // Expand slug dates by ±1 day to handle UTC rollover: evening games in the US
-        // tip after UTC midnight, so a slug dated 2026-03-31 may have an odds event
-        // timestamped 2026-04-01T01:00:00Z.
         const batchDates = new Set<string>();
         for (const pm of batch) {
           const d = pm.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
@@ -213,11 +233,6 @@ export class MarketMatcher {
           const teams = this.knowledge.resolveTeams(pm.slug);
           if (teams) batchTeams.push(teams);
         }
-        // Determine which Odds API sport(s) this batch maps to, so we don't
-        // feed basketball events to EPL markets and vice versa.
-        // Read sport from the slug prefix directly (first hyphen-delimited segment)
-        // rather than relying on parseSlug(), which requires a recognized market type
-        // suffix and returns null for Polymarket-specific suffixes like "-mac" or "-draw".
         const batchOddsSports = new Set<string>();
         for (const pm of batch) {
           const slugSport = pm.slug.split('-')[0];
@@ -226,12 +241,8 @@ export class MarketMatcher {
         }
 
         const filteredOddsEvents = oddsEvents.filter((e) => {
-          // Sport filter: if we know what sport this batch needs, exclude unrelated sports
           if (batchOddsSports.size > 0 && !batchOddsSports.has(e.sport)) return false;
           if (!batchDates.has(e.time.slice(0, 10))) return false;
-          // If we resolved teams, only include events that match at least one market's teams.
-          // Check both team orderings since slug order doesn't always reflect home/away
-          // (e.g. EPL slugs are alphabetical, not home/away).
           if (batchTeams.length > 0) {
             return batchTeams.some(
               (t) =>
@@ -239,7 +250,7 @@ export class MarketMatcher {
                 (looseNameMatch(e.home, t.away) && looseNameMatch(e.away, t.home)),
             );
           }
-          return true; // fallback: date-only filter if no teams could be resolved
+          return true;
         });
         if (filteredOddsEvents.length === 0) {
           log.warn(`Batch ${i + 1}/${batches.length}: no odds events after sport/date/team filter — skipping LLM call`);
@@ -258,16 +269,14 @@ export class MarketMatcher {
         totalLlmMatches += matches.length;
 
         for (const match of matches) {
-          // Validate: slug date matches odds event date (±1 day for UTC rollover); also set commence from the odds line
-          const oddsLine = oddsLines.get(match.oddsApiEventId);
-          if (oddsLine) {
+          // Validate: slug date matches odds event date (±2 days for UTC rollover)
+          const oddsEvent = oddsEvents.find((e) => e.id === match.oddsApiEventId);
+          if (oddsEvent) {
             const slugDate = match.slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
-            const oddsDate = new Date(oddsLine.commence).toISOString().slice(0, 10);
+            const oddsDate = oddsEvent.time.slice(0, 10);
             if (!slugDate) {
               log.warn(`No date found in slug ${match.slug}, skipping date validation`);
             } else {
-              // Allow ±1 day drift: games tipping late in local evening (10pm+) roll into next calendar day in UTC.
-              // E.g., a game on March 25 at 10:30pm ET is March 26 in UTC, so slug=2026-03-25 matches odds=2026-03-26.
               const slugMs = new Date(slugDate).getTime();
               const oddsMs = new Date(oddsDate).getTime();
               const dayDiff = Math.abs(slugMs - oddsMs) / (24 * 60 * 60 * 1000);
@@ -278,7 +287,7 @@ export class MarketMatcher {
                 continue;
               }
             }
-            match.commence = oddsLine.commence;
+            match.commence = new Date(oddsEvent.time).getTime();
           }
 
           const pmFull = polymarkets.find((p) => p.slug === match.slug);
@@ -306,7 +315,6 @@ export class MarketMatcher {
     if (totalLlmMatches === 0 && needsLlm.length > 0) {
       const marketTypeCounts: Record<string, number> = {};
       for (const pm of needsLlm) {
-        // Infer market type from slug
         const typeMatch = pm.slug.match(/(spread|h2h|moneyline|ml|total)/);
         const type = typeMatch?.[1] ?? "unknown";
         marketTypeCounts[type] = (marketTypeCounts[type] ?? 0) + 1;
@@ -317,8 +325,8 @@ export class MarketMatcher {
         oddsEventsSample: oddsEvents.slice(0, 5),
         polymarketsSample: needsLlm.slice(0, 5),
       };
-      import("fs").then(({ writeFileSync }) => {
-        writeFileSync("data/debug-matcher.json", JSON.stringify(debugPayload, null, 2));
+      import("fs").then(({ writeFileSync: ws }) => {
+        ws("data/debug-matcher.json", JSON.stringify(debugPayload, null, 2));
       });
       const typeSummary = Object.entries(marketTypeCounts)
         .map(([type, count]) => `${count}x ${type}`)
@@ -369,7 +377,6 @@ export class MarketMatcher {
     for (const pm of polymarkets) {
       const entry = this.table.get(pm.slug);
       if (!entry) continue;
-      // Treat markets not accepting orders as inactive
       const effectiveActive = pm.active && pm.acceptingOrders;
       if (entry.active !== effectiveActive) {
         entry.active = effectiveActive;
@@ -407,14 +414,7 @@ export class MarketMatcher {
   // ── LLM Matching (Tier 2) ──────────────────────────────────────
 
   private async callLlmMatcher(
-    oddsEvents: Array<{
-      id: string;
-      sport: string;
-      league: string;
-      home: string;
-      away: string;
-      time: string;
-    }>,
+    oddsEvents: OddsEvent[],
     polymarkets: PolymarketMarket[],
   ): Promise<MatchEntry[]> {
     if (!config.anthropicApiKey) {
@@ -549,7 +549,6 @@ Rules:
 
       if (res.status !== 429) break;
 
-      // Respect retry-after header if present, else exponential backoff
       const retryAfter = res.headers.get("retry-after");
       const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1_000 : (attempt + 1) * 30_000;
       log.warn(`Rate limited (429). Waiting ${waitMs / 1000}s before retry ${attempt + 1}/3...`);
@@ -589,7 +588,6 @@ Rules:
     // Convert to MatchEntry objects
     const now = Date.now();
     return raw.flatMap((r): MatchEntry[] => {
-      // Find the polymarket to get tokenIds
       const pm = polymarkets.find((p) => p.slug === r.slug);
       if (!pm) {
         log.warn(`LLM returned unknown slug "${r.slug}", skipping`);
@@ -605,7 +603,7 @@ Rules:
         return [];
       }
 
-      // Derive sportKey/leagueSlug from the matched odds event — the LLM's value is unreliable
+      // Derive sportKey/leagueSlug from the matched odds event
       const matchedEvent = oddsEvents.find((e) => e.id === r.oddsApiEventId);
       if (!matchedEvent) {
         log.warn(`LLM match "${r.slug}" references unknown event "${r.oddsApiEventId}", skipping`);
@@ -625,8 +623,8 @@ Rules:
           point: r.point ?? undefined,
           confidence: r.confidence,
           matchedAt: now,
-          commence: 0, // overridden in runMatchCycle once oddsLine is found
-          active: pm.active, // overridden in runMatchCycle from full market data
+          commence: 0, // overridden in runMatchCycle once oddsEvent is found
+          active: pm.active,
           tokenIds: {
             yes: pm.tokenIds?.[yesIdx] ?? "",
             no: pm.tokenIds?.[noIdx] ?? "",
@@ -684,16 +682,13 @@ export async function fetchPolymarketSportsMarkets(): Promise<
   const all: PolymarketMarket[] = [];
   const seenSlugs = new Set<string>();
 
-  // Build repeated params: sports_market_types=moneyline&sports_market_types=spreads&...
   const typeParams = config.polymarketSportsTypes
     .map((t) => `sports_market_types=${encodeURIComponent(t)}`)
     .join("&");
 
-  // Tag IDs filter specific leagues (e.g., 745=NBA, 82=EPL)
   const tagIds = config.polymarketTagIds;
   let offset = 0;
 
-  // If multiple tag IDs, fetch per-tag (API accepts single tag_id per request)
   const tagQueries = tagIds.length > 0 ? tagIds : [null];
 
   for (const tagId of tagQueries) {

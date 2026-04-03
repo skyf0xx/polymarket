@@ -1,6 +1,6 @@
 # Polymarket Edge Bot
 
-Detects mispriced sports markets on Polymarket by comparing live Polymarket prices against sharp sportsbook odds (configurable bookmaker via The Odds API). Bets when a statistically significant edge exists; exits positions when edge disappears.
+Detects mispriced sports markets on Polymarket using value-bet signals from The Odds API. Buys when a statistically significant edge exists; exits positions when the signal disappears.
 
 ## Setup
 
@@ -38,23 +38,24 @@ npm run build && npm start
 
 ## How it works
 
-1. **Startup**: Fetches the funder wallet's USDC balance on-chain, active Polymarket sports markets, and sharp odds snapshots (bookmaker set via `BOOKMAKER_ID`) via REST, then opens persistent WebSocket connections to both Polymarket and The Odds API
-2. **Market matching**: Maps Polymarket markets to Odds API events using a local cache; falls back to Claude Haiku for new/unmatched events
-3. **Edge detection**: On every odds or price update, computes `edge = sharp_prob − polymarket_price`. Fires a trade signal when net edge exceeds the minimum threshold
-4. **Sizing**: Quarter Kelly by default — `bet = bankroll × (edge / (1 − price)) × 0.25`
-5. **Exits**: Checks open positions on every price update; sells when edge flips negative (market has corrected or overshot)
-6. **Maintenance**: Every 5 minutes, refreshes market list, runs matcher on new events, resubscribes WebSocket to new token IDs, and re-fetches the on-chain USDC balance
+1. **Startup**: Fetches the funder wallet's USDC balance on-chain, hydrates team knowledge and open positions, fetches active Polymarket sports markets from Gamma API
+2. **Polling**: Every 30s, polls `/v3/value-bets?bookmaker=Polymarket` for markets with positive expected value. Extracts odds event details and feeds them to the matcher
+3. **Market matching**: Maps Polymarket markets to Odds API events using team knowledge (deterministic); falls back to Claude Haiku for new/unmatched events
+4. **Sizing**: Quarter Kelly by default — `bet = bankroll × (edge / (1 − price)) × 0.25`, capped at `MAX_KELLY_PCT`
+5. **Exits**: Every 5 minutes, checks open positions. If the value-bet signal disappears (event no longer in `/v3/value-bets`), evaluates P&L thresholds: take profit, cut loss, lock gains, or exit after prolonged absence
+6. **Maintenance**: Every 5 minutes, refreshes Gamma markets, re-syncs positions from Data API, refreshes on-chain USDC balance, prunes expired matches
 
 ## Architecture
 
 ```
-odds-stream.ts    — Odds API WS + REST hydration → sharp odds cache
-price-cache.ts    — Polymarket WS + REST hydration → live price cache
-market-matcher.ts — Local cache + LLM fallback matching
-edge-calculator.ts — Edge formula, Kelly sizing, cooldown
-position-tracker.ts — Open position tracking, persisted to disk
-coordinator.ts    — Wires all modules, routes signals
-executor.ts       — Places orders via Polymarket CLOB
+poller.ts          — Polls /v3/value-bets, sizes signals, feeds odds events to matcher
+market-matcher.ts  — Deterministic + LLM fallback matching (Polymarket ↔ Odds API)
+team-knowledge.ts  — Team abbreviation resolution, h2h outcomeMap cache
+exits.ts           — Exit logic: value-bet presence check + P&L thresholds
+executor.ts        — GTD/FAK order placement via Polymarket CLOB
+user-stream.ts     — Authenticated WS for fill confirmations
+position-tracker.ts — Open position tracking (Data API + WS updates)
+order-tracker.ts   — Resting orders + signal metadata
 ```
 
 ## Storage
@@ -62,8 +63,10 @@ executor.ts       — Places orders via Polymarket CLOB
 No database. All state is in-memory with JSON file persistence in `./data/`:
 
 - `match-table.json` — Polymarket ↔ Odds API event mappings
-- `trades.jsonl` — Append-only edge/trade log for dry-run analysis
+- `team-knowledge.json` — Team abbreviations + h2h outcomeMap cache
+- `trades.jsonl` — Append-only signal/trade log
+- `errors.jsonl` — Error log
 
 ## Deploy
 
-Long-running process on Railway. Use a Railway volume mounted at `/data/` so `match-table.json` and `trades.jsonl` survive deploys. Positions are hydrated live from the CLOB API on startup.
+Long-running process on Railway. Use a Railway volume mounted at `/data/` so `match-table.json` and `trades.jsonl` survive deploys. Positions are hydrated live from the Data API on startup.

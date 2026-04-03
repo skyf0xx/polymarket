@@ -8,10 +8,8 @@ import { readFileSync } from "fs";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import { PositionTracker } from "./position-tracker.js";
-import { PendingOrders } from "./pending-orders.js";
-import { PendingSignals } from "./pending-signals.js";
+import { OrderTracker } from "./order-tracker.js";
 import { MarketMatcher } from "./market-matcher.js";
-import { appendBuyEntry } from "./entry-logger.js";
 
 const log = createLogger("user-stream");
 const PING_INTERVAL_MS = 10_000;
@@ -45,12 +43,11 @@ export class UserStream {
   private reconnectAttempt = 0;
   private destroyed = false;
   private creds: ApiCreds;
-  private lastTradeTimestamp = 0; // tracks latest processed trade for catch-up
+  private lastTradeTimestamp = 0;
 
   constructor(
     private readonly positions: PositionTracker,
-    private readonly pendingOrders: PendingOrders,
-    private readonly pendingSignals: PendingSignals,
+    private readonly orders: OrderTracker,
     private readonly matcher: MarketMatcher,
     credsFile: string,
   ) {
@@ -70,7 +67,7 @@ export class UserStream {
     }
   }
 
-  // ── WebSocket Connection ─────────────────────────────────────────
+  // -- WebSocket Connection ---------------------------------------------------
 
   private connect(): void {
     if (this.destroyed) return;
@@ -147,7 +144,7 @@ export class UserStream {
     this.ws?.send(JSON.stringify(payload));
   }
 
-  // ── Ping / Keepalive ─────────────────────────────────────────────
+  // -- Ping / Keepalive -------------------------------------------------------
 
   private startPing(): void {
     this.clearPing();
@@ -165,7 +162,7 @@ export class UserStream {
     }
   }
 
-  // ── Message Handling ─────────────────────────────────────────────
+  // -- Message Handling -------------------------------------------------------
 
   private handleEvent(event: unknown): void {
     if (
@@ -177,7 +174,6 @@ export class UserStream {
     }
 
     const trade = event as TradeEvent;
-
     if (trade.status !== "MATCHED") return;
 
     const tokenId = trade.asset_id;
@@ -202,78 +198,35 @@ export class UserStream {
     if (trade.side === "BUY") {
       const existing = this.positions.getPosition(tokenId);
       if (existing) {
-        // Adding to an existing position
-        this.positions.recordBuy(
-          tokenId,
-          existing.slug,
-          existing.side,
-          price,
-          size,
-        );
+        this.positions.recordBuy(tokenId, existing.slug, existing.side, price, size);
       } else {
-        // New position — look up match to get slug and token side
-        const match = this.findMatchForToken(tokenId);
+        const match = this.matcher.getMatchByToken(tokenId);
         if (!match) {
-          log.warn(
-            `BUY trade matched for unmatched token, cannot record: ${tokenId}`,
-          );
+          log.warn(`BUY trade for unmatched token, cannot record: ${tokenId}`);
           return;
         }
         const tokenSide = tokenId === match.tokenIds.yes ? "YES" : "NO";
         this.positions.recordBuy(tokenId, match.slug, tokenSide, price, size);
       }
-      // Clear all pending orders for this token — the filled notional is now
-      // tracked as a real position. The next edge check will re-evaluate.
-      this.pendingOrders.removeByToken(tokenId);
 
-      // Log confirmed fill to entries.jsonl (uses signal-time metadata)
-      const meta = this.pendingSignals.consume(tokenId);
-      if (meta) {
-        if (meta.line !== null && meta.sharpProb !== null) {
-          appendBuyEntry(
-            meta.tokenSide,
-            meta.match,
-            meta.line,
-            price,   // actual fill price, not signal-time estimate
-            meta.sharpProb,
-            meta.netEdge,
-            meta.kellyFraction,
-            size,    // actual filled size
-          );
-        } else {
-          log.debug(`Value-bet fill for ${tokenId} — no sharp line to log entry`);
-        }
-      } else {
-        log.warn(`BUY fill for ${tokenId} has no pending signal metadata — entry not logged`);
-      }
+      // Clear pending orders — filled notional is now a real position
+      this.orders.removeOrdersByToken(tokenId);
+      // Consume signal metadata (no longer logging to separate entries.jsonl)
+      this.orders.consumeSignal(tokenId);
     } else {
       this.positions.recordSell(tokenId, price, size);
     }
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────
+  // -- REST Trade Catch-Up ----------------------------------------------------
 
-  private findMatchForToken(tokenId: string) {
-    return this.matcher.getMatchByToken(tokenId);
-  }
-
-  // ── REST Trade Catch-Up ─────────────────────────────────────────
-
-  /**
-   * Fetch recent trades from CLOB REST API and replay any MATCHED trades
-   * that occurred after our last processed timestamp (i.e. during WS outage).
-   */
   private async catchUpMissedTrades(): Promise<void> {
-    if (this.lastTradeTimestamp === 0) return; // no baseline — first connect
+    if (this.lastTradeTimestamp === 0) return;
 
     try {
       const res = await fetch(
         `${config.clobApiUrl}/trades?maker_address=${config.funderAddress}&limit=100`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
+        { headers: { "Content-Type": "application/json" } },
       );
 
       if (!res.ok) {
@@ -331,7 +284,7 @@ export class UserStream {
     }
   }
 
-  // ── Reconnection ─────────────────────────────────────────────────
+  // -- Reconnection -----------------------------------------------------------
 
   private scheduleReconnect(): void {
     if (this.destroyed) return;
