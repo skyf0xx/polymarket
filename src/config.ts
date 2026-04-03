@@ -56,13 +56,6 @@ export const config = {
   oddsApiSports: envList("ODDS_API_SPORTS", []),
 
   // Polymarket
-  polymarketSportsTypes: envList("POLYMARKET_SPORTS_TYPES", [
-    "moneyline",
-    "spreads",
-    "totals",
-  ]),
-  polymarketTagIds: envList("POLYMARKET_TAG_IDS", []),
-  polymarketMinLiquidity: envNum("POLYMARKET_MIN_LIQUIDITY", 1000),
   clobApiUrl: "https://clob.polymarket.com",
   gammaApiUrl: "https://gamma-api.polymarket.com",
   userWsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/user",
@@ -84,49 +77,8 @@ export const config = {
   dataDir: env("DATA_DIR", "./data"),
   credsFile: env("CREDS_FILE", "./api_creds.json"),
 
-  // Gamma Teams API
-  gammaLeagues: envList("GAMMA_LEAGUES", [
-    "nba",
-    "cbb",
-    "wnba",
-    "nfl",
-    "cfb",
-    "mlb",
-    "atp",
-    "wta",
-    "epl",
-  ]),
-
-  // League-to-sport mapping for matcher pre-filter
-  gammaLeagueToOddsSport: (() => {
-    const raw = process.env.GAMMA_LEAGUE_TO_ODDS_API_SPORT ?? "";
-    const map = new Map<string, string>([
-      ["epl", "football"],
-      ["nba", "basketball"],
-      ["nfl", "american-football"],
-      ["mlb", "baseball"],
-      ["cbb", "basketball"],
-      ["wnba", "basketball"],
-      ["cfb", "american-football"],
-      ["atp", "tennis"],
-      ["wta", "tennis"],
-    ]);
-    for (const pair of raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)) {
-      const [league, sport] = pair.split(":").map((s) => s.trim());
-      if (league && sport) map.set(league, sport);
-    }
-    return map;
-  })(),
-
   // Value Bet Poller
   valueBetPollIntervalMs: envNum("VALUE_BET_POLL_INTERVAL_MS", 30_000),
-
-  // Anthropic (for market matching LLM)
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
-  matcherModel: env("MATCHER_MODEL", "claude-haiku-4-5-20251001"),
 
   // Polygon RPC
   polygonRpc: env("POLYGON_RPC", "https://polygon-rpc.com"),

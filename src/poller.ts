@@ -1,16 +1,16 @@
 // src/poller.ts
 // Polls odds-api.io /v3/value-bets every 30s.
-// Two jobs: market discovery (new events) + signal dispatch (known events).
-// Exposes activeValueBetEvents for exit logic to check thesis status.
+// For each bet: extract slug from bookmakerOdds.href, fetch event from Gamma,
+// resolve token, Kelly-size, dispatch order.
+// Exposes activeValueBetSlugs for exit logic to check thesis status.
 
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import { isOnCooldown, markSignaled } from "./cooldown.js";
 import { executeSignal } from "./executor.js";
 import type { ClobClient } from "@polymarket/clob-client";
-import type { MarketMatcher } from "./market-matcher.js";
 import type { OrderTracker } from "./order-tracker.js";
-import type { MatchEntry, TradeSignal, OddsEvent } from "./types.js";
+import type { TradeSignal } from "./types.js";
 
 const log = createLogger("poller");
 
@@ -29,6 +29,7 @@ interface ValueBetBookmakerOdds {
   draw?: string;
   home?: string;
   hdp?: string;
+  href?: string;
 }
 
 interface ValueBetMarket {
@@ -52,20 +53,69 @@ interface ValueBet {
   market: ValueBetMarket;
 }
 
-// -- Active value-bet events (shared with exit logic) -------------------------
+// -- Gamma event shape (subset we need) ---------------------------------------
 
-/** Set of Odds API event IDs that had value-bets in the latest poll cycle. */
-let _activeValueBetEvents = new Set<string>();
+interface GammaMarket {
+  id: string;
+  question: string;
+  outcomes: string;        // JSON-encoded string: '["Yes","No"]'
+  clobTokenIds: string;    // JSON-encoded string: '["token1","token2"]'
+  active: boolean;
+  closed: boolean;
+  acceptingOrders: boolean;
+  groupItemTitle?: string; // Team name in negRisk events (e.g., "Udinese Calcio")
+  sportsMarketType?: string;
+  line?: number;
+  orderPriceMinTickSize?: number;
+}
 
-export function getActiveValueBetEvents(): Set<string> {
-  return _activeValueBetEvents;
+interface GammaEvent {
+  id: string;
+  slug: string;
+  title: string;
+  active: boolean;
+  closed: boolean;
+  markets: GammaMarket[];
+}
+
+// -- Resolved market cache ----------------------------------------------------
+
+interface ResolvedMarket {
+  slug: string;
+  markets: ParsedMarket[];
+}
+
+interface ParsedMarket {
+  tokenIds: { yes: string; no: string };
+  outcomes: { yes: string; no: string };
+  groupItemTitle?: string; // Team name for negRisk markets
+  active: boolean;
+  question: string;
+  sportsMarketType?: string;
+  line?: number;
+}
+
+const slugCache = new Map<string, ResolvedMarket>();
+
+// Token→slug+side map (for UserStream to resolve fills without matcher)
+const tokenInfoMap = new Map<string, { slug: string; side: "YES" | "NO" }>();
+
+export function getTokenInfo(tokenId: string): { slug: string; side: "YES" | "NO" } | undefined {
+  return tokenInfoMap.get(tokenId);
+}
+
+// -- Active value-bet slugs (shared with exit logic) --------------------------
+
+let _activeValueBetSlugs = new Set<string>();
+
+export function getActiveValueBetSlugs(): Set<string> {
+  return _activeValueBetSlugs;
 }
 
 // -- Poller -------------------------------------------------------------------
 
 export interface PollerDeps {
   client: ClobClient;
-  matcher: MarketMatcher;
   orders: OrderTracker;
   getBankroll: () => number;
 }
@@ -103,157 +153,160 @@ async function poll(deps: PollerDeps): Promise<void> {
     return;
   }
 
-  // Update the active value-bet events set (used by exit logic)
-  _activeValueBetEvents = new Set(bets.map((b) => String(b.eventId)));
-
-  if (bets.length === 0) return;
+  if (bets.length === 0) {
+    _activeValueBetSlugs = new Set();
+    return;
+  }
   log.debug(`Fetched ${bets.length} value bet(s)`);
 
-  // Extract odds events from value-bets and feed to matcher
-  const oddsEvents = extractOddsEvents(bets);
-  if (oddsEvents.length > 0) {
-    deps.matcher.setOddsEvents(oddsEvents);
-  }
-
-  const seenEventIds = new Set<number>();
-  const newEventBets: ValueBet[] = [];
-  const knownEventBets: ValueBet[] = [];
-
+  // Update active slugs for exit logic
+  const activeSlugs = new Set<string>();
   for (const bet of bets) {
-    const isKnown = deps.matcher.getMatchesByEvent(String(bet.eventId)).length > 0;
-    if (isKnown) {
-      knownEventBets.push(bet);
-    } else if (!seenEventIds.has(bet.eventId)) {
-      seenEventIds.add(bet.eventId);
-      newEventBets.push(bet);
-    }
+    const slug = extractSlug(bet);
+    if (slug) activeSlugs.add(slug);
   }
+  _activeValueBetSlugs = activeSlugs;
 
-  // Job 1: market discovery
-  if (newEventBets.length > 0) {
-    log.info(`${newEventBets.length} unmatched event(s) -- triggering matcher`);
-    await runDiscovery(deps, newEventBets);
-  }
-
-  // Job 2: confirmed signals
-  for (const bet of knownEventBets) {
-    dispatchSignal(deps, bet);
-  }
-}
-
-// -- Job 1: discovery ---------------------------------------------------------
-
-async function runDiscovery(deps: PollerDeps, bets: ValueBet[]): Promise<void> {
-  try {
-    const polymarkets = deps.matcher.getKnownMarkets();
-    const { newMatches } = await deps.matcher.runMatchCycle(polymarkets);
-    if (newMatches > 0) {
-      log.info(`Discovery: matched ${newMatches} new market(s) from ${bets.length} event(s)`);
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log.warn(`Discovery error: ${msg}`);
-  }
-}
-
-// -- Extract odds events from value-bets --------------------------------------
-
-function extractOddsEvents(bets: ValueBet[]): OddsEvent[] {
-  const seen = new Set<string>();
-  const events: OddsEvent[] = [];
-
+  // Process each bet
   for (const bet of bets) {
-    const id = String(bet.eventId);
-    if (seen.has(id) || !bet.event) continue;
-    seen.add(id);
-
-    events.push({
-      id,
-      sport: bet.event.sport,
-      league: bet.event.league,
-      home: bet.event.home,
-      away: bet.event.away,
-      time: bet.event.date,
-    });
+    await processBet(deps, bet);
   }
-
-  return events;
 }
 
-// -- Job 2: signal dispatch ---------------------------------------------------
+// -- Process a single value bet -----------------------------------------------
 
-function dispatchSignal(deps: PollerDeps, bet: ValueBet): void {
-  const matches = deps.matcher.getMatchesByEvent(String(bet.eventId));
-  if (matches.length === 0) return;
+async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
+  const slug = extractSlug(bet);
+  if (!slug) {
+    log.debug(`No href in value bet ${bet.id}, skipping`);
+    return;
+  }
+
+  // Resolve event from Gamma (cached)
+  let resolved = slugCache.get(slug);
+  if (!resolved) {
+    const fetched = await fetchAndCacheEvent(slug);
+    if (!fetched) return;
+    resolved = fetched;
+  }
 
   const bidPrice = impliedProbFromBet(bet);
   if (bidPrice === null) return;
 
-  for (const match of matches) {
-    if (match.active === false) continue;
+  // Find the right market and token for this bet
+  const match = resolveToken(bet, resolved);
+  if (!match) return;
 
-    const tokenId = resolveTokenForBetSide(bet, match);
-    if (tokenId === null) continue;
+  const { tokenId, tokenSide, market } = match;
 
-    if (isOnCooldown(tokenId)) {
-      log.debug(`Cooldown active for ${tokenId}, skipping`);
-      continue;
-    }
+  if (!market.active) {
+    log.debug(`Market inactive for ${slug}, skipping`);
+    return;
+  }
 
-    // Kelly sizing: EV as net-edge proxy
-    const ev = bet.expectedValue;
-    const rawKelly = ev / (1 - bidPrice);
-    const adjustedKelly = Math.min(rawKelly * config.kellyFraction, config.maxKellyPct);
-    const suggestedUsdc = deps.getBankroll() * adjustedKelly;
+  if (isOnCooldown(tokenId)) {
+    log.debug(`Cooldown active for ${tokenId}, skipping`);
+    return;
+  }
 
-    const size = Math.round(suggestedUsdc / bidPrice);
-    if (size < 1) continue;
+  // Kelly sizing
+  const ev = bet.expectedValue;
+  const rawKelly = ev / (1 - bidPrice);
+  const adjustedKelly = Math.min(rawKelly * config.kellyFraction, config.maxKellyPct);
+  const suggestedUsdc = deps.getBankroll() * adjustedKelly;
 
-    const tokenSide = tokenId === match.tokenIds.yes ? "YES" : "NO";
-    const signal: TradeSignal = {
-      tokenId,
-      slug: match.slug,
-      side: "BUY",
-      tokenSide,
-      price: bidPrice,
-      size,
-      edge: ev,
-      kellyFraction: rawKelly,
-      reason: "value_bet_confirmed",
-    };
+  const size = Math.round(suggestedUsdc / bidPrice);
+  if (size < 1) return;
 
-    markSignaled(tokenId);
+  const signal: TradeSignal = {
+    tokenId,
+    slug,
+    side: "BUY",
+    tokenSide,
+    price: bidPrice,
+    size,
+    edge: ev,
+    kellyFraction: rawKelly,
+    reason: "value_bet_confirmed",
+  };
 
-    deps.orders.storeSignal(tokenId, {
-      tokenSide,
-      match,
-      line: null,
-      sharpProb: null,
-      netEdge: ev,
-      kellyFraction: rawKelly,
-    });
+  markSignaled(tokenId);
 
-    log.record(`SIGNAL BUY`, {
-      tokenId,
-      slug: match.slug,
-      price: bidPrice,
-      size,
-      edge: ev,
-      kellyFraction: rawKelly,
-      reason: "value_bet_confirmed",
-      dryRun: config.dryRun,
-    });
+  // Register token info for UserStream fill resolution
+  tokenInfoMap.set(tokenId, { slug, side: tokenSide });
 
-    if (config.dryRun) {
-      log.info(
-        `[DRY RUN] Would BUY ${size} shares of ${match.slug} @ ${bidPrice.toFixed(4)} (EV=${(ev * 100).toFixed(2)}%)`,
-      );
-      continue;
-    }
+  deps.orders.storeSignal(tokenId, {
+    tokenSide,
+    slug,
+    netEdge: ev,
+    kellyFraction: rawKelly,
+  });
 
-    executeSignal(deps.client, signal, deps.orders).catch((err) =>
-      log.error(`Dispatch error: ${err.message}`),
+  log.record(`SIGNAL BUY`, {
+    tokenId,
+    slug,
+    price: bidPrice,
+    size,
+    edge: ev,
+    kellyFraction: rawKelly,
+    reason: "value_bet_confirmed",
+    dryRun: config.dryRun,
+  });
+
+  if (config.dryRun) {
+    log.info(
+      `[DRY RUN] Would BUY ${size} shares of ${slug} @ ${bidPrice.toFixed(4)} (EV=${(ev * 100).toFixed(2)}%)`,
     );
+    return;
+  }
+
+  executeSignal(deps.client, signal, deps.orders).catch((err) =>
+    log.error(`Dispatch error: ${err.message}`),
+  );
+}
+
+// -- Gamma API ----------------------------------------------------------------
+
+async function fetchAndCacheEvent(slug: string): Promise<ResolvedMarket | null> {
+  try {
+    const url = `${config.gammaApiUrl}/events/slug/${slug}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      log.warn(`Gamma fetch failed for slug=${slug}: HTTP ${res.status}`);
+      return null;
+    }
+
+    const event = (await res.json()) as GammaEvent;
+    if (!event.markets || event.markets.length === 0) {
+      log.warn(`No markets for slug=${slug}`);
+      return null;
+    }
+
+    const markets: ParsedMarket[] = [];
+    for (const m of event.markets) {
+      const outcomes = safeJsonParse<string[]>(m.outcomes, []);
+      const tokenIds = safeJsonParse<string[]>(m.clobTokenIds, []);
+      if (outcomes.length < 2 || tokenIds.length < 2) continue;
+
+      markets.push({
+        tokenIds: { yes: tokenIds[0], no: tokenIds[1] },
+        outcomes: { yes: outcomes[0], no: outcomes[1] },
+        groupItemTitle: m.groupItemTitle,
+        active: m.active && !m.closed && (m.acceptingOrders !== false),
+        question: m.question,
+        sportsMarketType: m.sportsMarketType,
+        line: m.line,
+      });
+    }
+
+    const resolved: ResolvedMarket = { slug, markets };
+    slugCache.set(slug, resolved);
+    log.info(`Cached event slug=${slug} with ${markets.length} market(s)`);
+    return resolved;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`Gamma fetch error for slug=${slug}: ${msg}`);
+    return null;
   }
 }
 
@@ -275,13 +328,22 @@ async function fetchValueBets(): Promise<ValueBet[]> {
 
 // -- Helpers ------------------------------------------------------------------
 
+function extractSlug(bet: ValueBet): string | null {
+  const href = bet.bookmakerOdds.href;
+  if (!href) return null;
+  // href = "https://polymarket.com/event/nba-atl-bkn-2026-04-03"
+  const parts = href.split("/");
+  return parts[parts.length - 1] || null;
+}
+
 function impliedProbFromBet(bet: ValueBet): number | null {
   const side = bet.betSide.toLowerCase();
   let oddsStr: string | undefined;
 
-  if (side === "home") oddsStr = bet.bookmakerOdds.home;
-  else if (side === "away") oddsStr = bet.bookmakerOdds.away;
-  else if (side === "draw") oddsStr = bet.bookmakerOdds.draw;
+  // Use sharp/reference odds from bet.market (not Polymarket's own price)
+  if (side === "home") oddsStr = bet.market.home;
+  else if (side === "away") oddsStr = bet.market.away;
+  else if (side === "draw") oddsStr = bet.market.draw;
 
   if (!oddsStr) return null;
   const decimal = parseFloat(oddsStr);
@@ -289,26 +351,80 @@ function impliedProbFromBet(bet: ValueBet): number | null {
   return 1 / decimal;
 }
 
-function resolveTokenForBetSide(bet: ValueBet, match: MatchEntry): string | null {
+function resolveToken(
+  bet: ValueBet,
+  resolved: ResolvedMarket,
+): { tokenId: string; tokenSide: "YES" | "NO"; market: ParsedMarket } | null {
   const side = bet.betSide.toLowerCase();
   if (side === "draw") return null;
 
-  const eventHome = bet.event?.home ?? "";
-  const eventAway = bet.event?.away ?? "";
-  const betTeam = side === "home" ? eventHome : eventAway;
+  const betTeam = side === "home" ? bet.event?.home : bet.event?.away;
   if (!betTeam) return null;
+  const betTeamLower = normalize(betTeam);
 
-  const yesOutcome = match.outcomeMap.Yes.toLowerCase();
-  const betTeamLower = betTeam.toLowerCase();
-
-  if (yesOutcome.includes(betTeamLower) || betTeamLower.includes(yesOutcome)) {
-    return match.tokenIds.yes;
+  // Strategy 1: Match by groupItemTitle (negRisk events — one market per team,
+  // outcomes are just Yes/No, team name is in groupItemTitle).
+  // Betting ON a team = buying YES on that team's market.
+  for (const market of resolved.markets) {
+    if (!market.groupItemTitle) continue;
+    const titleNorm = normalize(market.groupItemTitle);
+    if (titleNorm.includes(betTeamLower) || betTeamLower.includes(titleNorm)) {
+      return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
+    }
   }
 
-  const noOutcome = match.outcomeMap.No.toLowerCase();
-  if (noOutcome.includes(betTeamLower) || betTeamLower.includes(noOutcome)) {
-    return match.tokenIds.no;
+  // Strategy 2: Match by outcome names (non-negRisk events — outcomes contain
+  // team names directly, e.g., ["Atlanta Hawks", "Brooklyn Nets"]).
+  for (const market of resolved.markets) {
+    const yesNorm = normalize(market.outcomes.yes);
+    const noNorm = normalize(market.outcomes.no);
+
+    if (yesNorm.includes(betTeamLower) || betTeamLower.includes(yesNorm)) {
+      return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
+    }
+    if (noNorm.includes(betTeamLower) || betTeamLower.includes(noNorm)) {
+      return { tokenId: market.tokenIds.no, tokenSide: "NO", market };
+    }
   }
 
+  // Strategy 3: Match by question text (e.g., "Will Udinese Calcio win on 2026-04-06?")
+  for (const market of resolved.markets) {
+    if (normalize(market.question).includes(betTeamLower)) {
+      return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
+    }
+  }
+
+  // Strategy 4: Last-word match (handles "Atletico Tucuman" vs "CA Tucumán" —
+  // different prefixes but same city name)
+  const betWords = betTeamLower.split(/\s+/);
+  const lastWord = betWords[betWords.length - 1];
+  if (lastWord && lastWord.length >= 4) {
+    const candidates: { market: ParsedMarket; titleNorm: string }[] = [];
+    for (const market of resolved.markets) {
+      if (!market.groupItemTitle || market.groupItemTitle.toLowerCase().startsWith("draw")) continue;
+      const titleNorm = normalize(market.groupItemTitle);
+      if (titleNorm.includes(lastWord)) {
+        candidates.push({ market, titleNorm });
+      }
+    }
+    if (candidates.length === 1) {
+      return { tokenId: candidates[0].market.tokenIds.yes, tokenSide: "YES", market: candidates[0].market };
+    }
+  }
+
+  log.warn(`Could not resolve token for bet ${bet.id} (team=${betTeam}) in slug=${resolved.slug}`);
   return null;
+}
+
+/** Strip diacritics and lowercase for fuzzy team name matching. */
+function normalize(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function safeJsonParse<T>(raw: string, fallback: T): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
 }

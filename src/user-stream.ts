@@ -7,9 +7,9 @@ import { createHmac } from "crypto";
 import { readFileSync } from "fs";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
+import { getTokenInfo } from "./poller.js";
 import { PositionTracker } from "./position-tracker.js";
 import { OrderTracker } from "./order-tracker.js";
-import { MarketMatcher } from "./market-matcher.js";
 
 const log = createLogger("user-stream");
 const PING_INTERVAL_MS = 10_000;
@@ -48,7 +48,6 @@ export class UserStream {
   constructor(
     private readonly positions: PositionTracker,
     private readonly orders: OrderTracker,
-    private readonly matcher: MarketMatcher,
     credsFile: string,
   ) {
     this.creds = JSON.parse(readFileSync(credsFile, "utf-8")) as ApiCreds;
@@ -200,18 +199,16 @@ export class UserStream {
       if (existing) {
         this.positions.recordBuy(tokenId, existing.slug, existing.side, price, size);
       } else {
-        const match = this.matcher.getMatchByToken(tokenId);
-        if (!match) {
-          log.warn(`BUY trade for unmatched token, cannot record: ${tokenId}`);
+        const info = getTokenInfo(tokenId);
+        if (!info) {
+          log.warn(`BUY trade for unknown token, cannot record: ${tokenId}`);
           return;
         }
-        const tokenSide = tokenId === match.tokenIds.yes ? "YES" : "NO";
-        this.positions.recordBuy(tokenId, match.slug, tokenSide, price, size);
+        this.positions.recordBuy(tokenId, info.slug, info.side, price, size);
       }
 
       // Clear pending orders — filled notional is now a real position
       this.orders.removeOrdersByToken(tokenId);
-      // Consume signal metadata (no longer logging to separate entries.jsonl)
       this.orders.consumeSignal(tokenId);
     } else {
       this.positions.recordSell(tokenId, price, size);

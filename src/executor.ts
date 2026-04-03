@@ -1,6 +1,6 @@
 // src/executor.ts
 // Places orders on Polymarket CLOB.
-// BUY: GTD limit order (5-min expiry, inside the spread)
+// BUY: GTD limit order (5-min expiry) at sharp signal price
 // SELL: FAK market order (fill or cancel)
 
 import { ClobClient, OrderType, Side } from "@polymarket/clob-client";
@@ -46,18 +46,15 @@ export async function executeSignal(
   try {
     const isBuy = signal.side === "BUY";
 
-    const [{ tickSize, negRisk }, { price: bookPrice }] = await Promise.all([
-      getMarketInfo(client, signal.tokenId),
-      client.getPrice(signal.tokenId, isBuy ? "BUY" : "SELL"),
-    ]);
+    // BUY: enter at sharp signal price
+    // SELL: FAK into the live bid
+    const { tickSize, negRisk } = await getMarketInfo(client, signal.tokenId);
+    let orderPrice = signal.price;
 
-    const tick = Number(tickSize);
-
-    // BUY: post inside the spread (lesser of signal price or just below ask)
-    // SELL: FAK into the market
-    const orderPrice = isBuy
-      ? Math.min(signal.price, Number(bookPrice) - tick)
-      : Number(bookPrice) - 2 * tick;
+    if (!isBuy) {
+      const { price: bookPrice } = await client.getPrice(signal.tokenId, "SELL");
+      orderPrice = Number(bookPrice);
+    }
 
     const size = signal.size;
     const sdkSide = isBuy ? Side.BUY : Side.SELL;

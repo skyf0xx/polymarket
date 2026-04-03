@@ -1,15 +1,13 @@
 // src/index.ts
-// Entry point: init wallet, hydrate data, start poller + maintenance.
+// Entry point: init wallet, hydrate positions, start poller + maintenance.
 
 import { ethers } from "ethers";
 import { ClobClient, ApiKeyCreds } from "@polymarket/clob-client";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import { MarketMatcher, fetchPolymarketSportsMarkets } from "./market-matcher.js";
 import { PositionTracker } from "./position-tracker.js";
 import { OrderTracker } from "./order-tracker.js";
 import { UserStream } from "./user-stream.js";
-import { MarketStream } from "./market-stream.js";
 import { startPoller, stopPoller } from "./poller.js";
 import { startMaintenance, stopMaintenance } from "./maintenance.js";
 import { getUsdcBalance } from "./wallet.js";
@@ -63,7 +61,7 @@ async function initClobClient(): Promise<ClobClient> {
 async function main(): Promise<void> {
   log.info("==============================================");
   log.info("  Value-Bet Bot");
-  log.info(`  DRY_RUN=${config.dryRun}  Sports: ${config.oddsApiSports.join(", ")}`);
+  log.info(`  DRY_RUN=${config.dryRun}`);
   log.info(`  Kelly: ${config.kellyFraction}  Cooldown: ${config.cooldownSeconds}s`);
   log.info("==============================================");
 
@@ -78,59 +76,37 @@ async function main(): Promise<void> {
   }
   log.info(`Bankroll: $${bankroll.toFixed(2)}`);
 
-  if (config.oddsApiSports.length === 0) {
-    log.error("ODDS_API_SPORTS is empty");
-    process.exit(1);
-  }
-
   // 3. Instantiate modules
-  const matcher = new MarketMatcher();
   const positions = new PositionTracker();
   const orders = new OrderTracker();
 
-  // 4. Hydrate (lightweight — no odds cache, just positions + teams)
-  log.info("Hydrating...");
-  await matcher.hydrateTeams(config.gammaLeagues);
+  // 4. Hydrate positions
+  log.info("Hydrating positions...");
   await positions.hydrate();
 
-  // Initial match cycle with existing Gamma markets (odds events will
-  // be populated by the first poller cycle from value-bets)
-  const polymarkets = await fetchPolymarketSportsMarkets();
-  log.info(`${polymarkets.length} active sports market(s)`);
-
-  const { newMatches, total } = await matcher.runMatchCycle(polymarkets);
-  log.info(`Matching: ${newMatches} new, ${total} total`);
-
   // 5. Start user stream (fill confirmations)
-  const userStream = new UserStream(positions, orders, matcher, config.credsFile);
+  const userStream = new UserStream(positions, orders, config.credsFile);
   userStream.start();
 
-  // 6. Start market stream (new_market + market_resolved push updates)
-  const marketStream = new MarketStream(matcher);
-  marketStream.start();
-
-  // 7. Start poller (sole signal source — also feeds odds events to matcher)
+  // 6. Start poller (sole signal source)
   startPoller({
     client,
-    matcher,
     orders,
     getBankroll: () => bankroll!,
   });
 
-  // 8. Start maintenance (refresh data + exit sweep every 5 min)
+  // 7. Start maintenance (refresh data + exit sweep every 5 min)
   startMaintenance({
     client,
-    matcher,
     positions,
     orders,
     getBankroll: () => bankroll!,
     setBankroll: (b) => { bankroll = b; },
   });
 
-  // 9. Health logging
+  // 8. Health logging
   const healthTimer = setInterval(() => {
     log.info("HEALTH", {
-      matches: matcher.size,
       positions: positions.size,
       pending: orders.pendingCount,
       bankroll,
@@ -150,7 +126,6 @@ async function main(): Promise<void> {
     stopPoller();
     stopMaintenance();
     userStream.destroy();
-    marketStream.destroy();
     log.info("Shutdown complete");
     process.exit(0);
   };
