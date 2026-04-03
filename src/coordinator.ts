@@ -52,6 +52,8 @@ export class Coordinator {
   // Consecutive ≤0 edge check counter per token (for underwater persistence exit)
   private negativeEdgeChecks = new Map<string, number>();
 
+  private valueBetOnlyMode = false;
+
   // Bound event handlers (stored for targeted removal in destroy())
   private boundOnOddsUpdate = this.onOddsUpdate.bind(this);
   private boundOnPriceUpdate = this.onPriceUpdate.bind(this);
@@ -98,6 +100,25 @@ export class Coordinator {
     log.info("Coordinator listening for updates");
   }
 
+  /**
+   * Value-bet-only mode: skip WS-driven edge checks entirely.
+   * Only ValueBetPoller can trigger signals via triggerEdgeEval().
+   * Maintenance still runs so matches/positions stay fresh.
+   */
+  startValueBetOnly(): void {
+    log.info(`Starting coordinator in value-bet-only mode (DRY_RUN=${config.dryRun})`);
+
+    // No odds_update / price_update listeners — only ValueBetPoller fires signals.
+    // Exit checks run during maintenance instead of on each price_update.
+    this.valueBetOnlyMode = true;
+    this.maintenanceTimer = setInterval(
+      () => this.runMaintenance(),
+      config.maintenanceIntervalMs,
+    );
+
+    log.info("Coordinator ready — awaiting value-bet signals");
+  }
+
   destroy(): void {
     this.destroyed = true;
     if (this.maintenanceTimer) {
@@ -128,6 +149,74 @@ export class Coordinator {
     reason: "value_bet_confirmed",
   ): void {
     this.evaluateEdge(tokenId, match, line, reason);
+  }
+
+  /**
+   * Called by ValueBetPoller in value-bet-only mode.
+   * Trusts the external signal entirely — no edge recomputation.
+   *
+   * @param tokenId   Polymarket token to buy
+   * @param match     MatchEntry for slug / token side lookup
+   * @param bidPrice  Implied probability from bookmaker odds (= GTD limit price)
+   * @param ev        Expected value from odds-api.io (used as edge proxy for Kelly)
+   */
+  placeValueBetSignal(
+    tokenId: string,
+    match: MatchEntry,
+    bidPrice: number,
+    ev: number,
+  ): void {
+    try {
+      if (match.active === false) return;
+
+      // Cooldown — don't double-fire on the same market within the window
+      if (isOnCooldown(tokenId)) {
+        log.debug(`Cooldown active for ${tokenId}, skipping value-bet signal`);
+        return;
+      }
+
+      // Kelly sizing using EV as the net-edge proxy.
+      // f* = ev / (1 - price)  ×  kellyFraction, capped at maxKellyPct
+      const rawKelly = ev / (1 - bidPrice);
+      const adjustedKelly = Math.min(rawKelly * config.kellyFraction, config.maxKellyPct);
+      const suggestedUsdc = this._bankroll * adjustedKelly;
+
+      const size = Math.round(suggestedUsdc / bidPrice);
+      if (size < 1) {
+        log.debug(`Value-bet signal too small (size=0) for ${match.slug}`);
+        return;
+      }
+
+      const tokenSide = tokenId === match.tokenIds.yes ? "YES" : "NO";
+      const signal: TradeSignal = {
+        tokenId,
+        slug: match.slug,
+        side: "BUY",
+        tokenSide,
+        price: bidPrice,
+        size,
+        edge: ev,
+        kellyFraction: rawKelly,
+        reason: "value_bet_confirmed",
+      };
+
+      markSignaled(tokenId);
+
+      // Store minimal metadata — no OddsStream line available in this path
+      this.pendingSignals.store(tokenId, {
+        tokenSide,
+        match,
+        line: null,
+        sharpProb: null,
+        netEdge: ev,
+        kellyFraction: rawKelly,
+      });
+
+      this.dispatchSignal(signal);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`placeValueBetSignal error for ${tokenId}: ${message}`);
+    }
   }
 
   // ── Event Handlers ──────────────────────────────────────────────
@@ -425,6 +514,15 @@ export class Coordinator {
     }
   }
 
+  private checkAllExits(): void {
+    const positions = this.positions.getAllPositions();
+    if (positions.length === 0) return;
+    log.debug(`Exit sweep: checking ${positions.length} open position(s)`);
+    for (const position of positions) {
+      this.checkExitForToken(position.tokenId);
+    }
+  }
+
   // ── Signal Dispatch ─────────────────────────────────────────────
 
   private dispatchSignal(signal: TradeSignal): void {
@@ -512,6 +610,12 @@ export class Coordinator {
 
       // 8. Prune expired pending signals (unfilled GTD orders)
       this.pendingSignals.pruneExpired();
+
+      // 9. In value-bet-only mode, check all open positions for exit signals
+      //    (replaces the WS-driven per-price-update exit check)
+      if (this.valueBetOnlyMode) {
+        this.checkAllExits();
+      }
 
       log.info(
         `Maintenance complete: odds=${this.odds.size} events, prices=${this.prices.size} tokens, matches=${this.matcher.size}, positions=${this.positions.size}, pending=${this.pendingOrders.size}`,

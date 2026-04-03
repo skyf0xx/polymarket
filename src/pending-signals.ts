@@ -13,8 +13,8 @@ const SIGNAL_TTL_MS = 10 * 60 * 1_000;
 export interface SignalMeta {
   tokenSide: "YES" | "NO";
   match: MatchEntry;
-  line: SharpLine;
-  sharpProb: number;
+  line: SharpLine | null; // null when signal came from value-bet-only path
+  sharpProb: number | null; // null when signal came from value-bet-only path
   netEdge: number;
   kellyFraction: number;
   storedAt: number;

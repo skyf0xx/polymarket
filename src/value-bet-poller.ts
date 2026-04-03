@@ -14,7 +14,7 @@ import { config } from "./config.js";
 import type { MarketMatcher } from "./market-matcher.js";
 import type { OddsStream } from "./odds-stream.js";
 import type { Coordinator } from "./coordinator.js";
-import type { PolymarketMarket } from "./types.js";
+import type { PolymarketMarket, MatchEntry } from "./types.js";
 
 const log = createLogger("value-bet-poller");
 
@@ -169,17 +169,27 @@ export class ValueBetPoller {
       const matches = this.matcher.getMatchesByEvent(eventIdStr);
       if (matches.length === 0) continue;
 
-      const line = this.odds.getLine(eventIdStr);
-      if (!line) continue;
+      // Parse the bookmaker's decimal odds for betSide → implied probability.
+      // This is the price we will bid at in the GTD order.
+      const bidPrice = impliedProbFromBet(bet);
+      if (bidPrice === null) {
+        log.debug(`Cannot parse odds for bet id=${bet.id} side=${bet.betSide}`);
+        continue;
+      }
 
       for (const match of matches) {
+        // Only place on the token whose outcome matches betSide.
+        const tokenId = resolveTokenForBetSide(bet, match);
+        if (tokenId === null) continue;
+
         log.debug(
-          `Value-bet confirmed signal candidate: ${match.slug} (EV=${bet.expectedValue.toFixed(4)}, side=${bet.betSide})`,
+          `Value-bet signal: ${match.slug} token=${tokenId} price=${bidPrice.toFixed(4)} EV=${bet.expectedValue.toFixed(4)} side=${bet.betSide}`,
         );
-        // Coordinator re-runs computeEdge with our own formula and only fires
-        // if net_edge >= MIN_EDGE and cooldown is clear.
-        this.coordinator.triggerEdgeEval(match.tokenIds.yes, match, line, "value_bet_confirmed");
-        this.coordinator.triggerEdgeEval(match.tokenIds.no, match, line, "value_bet_confirmed");
+
+        // Trust the external signal — skip our own edge recomputation.
+        // Coordinator places a GTD limit order at bidPrice; if the market
+        // doesn't fill within 5 minutes it auto-cancels.
+        this.coordinator.placeValueBetSignal(tokenId, match, bidPrice, bet.expectedValue);
       }
     }
   }
@@ -202,4 +212,60 @@ export class ValueBetPoller {
     }
     return data;
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+
+/**
+ * Convert the bookmaker's decimal odds for betSide → implied probability.
+ * Decimal odds of 2.10 → 1/2.10 ≈ 0.476.
+ * Returns null if the odds string is missing or unparseable.
+ */
+function impliedProbFromBet(bet: ValueBet): number | null {
+  const side = bet.betSide.toLowerCase();
+  let oddsStr: string | undefined;
+
+  if (side === "home") oddsStr = bet.bookmakerOdds.home;
+  else if (side === "away") oddsStr = bet.bookmakerOdds.away;
+  else if (side === "draw") oddsStr = bet.bookmakerOdds.draw;
+
+  if (!oddsStr) return null;
+  const decimal = parseFloat(oddsStr);
+  if (!isFinite(decimal) || decimal <= 1) return null;
+  return 1 / decimal;
+}
+
+/**
+ * Map betSide ("home" | "away" | "draw") to the Polymarket token that
+ * corresponds to that outcome. Uses outcomeMap to find which YES/NO token
+ * covers the team named in the event.
+ *
+ * Returns null when the side can't be resolved (e.g. draw on an h2h market
+ * that Polymarket doesn't offer a draw outcome for).
+ */
+function resolveTokenForBetSide(bet: ValueBet, match: MatchEntry): string | null {
+  const side = bet.betSide.toLowerCase();
+  if (side === "draw") return null; // Polymarket h2h markets are typically win/loss only
+
+  const eventHome = bet.event?.home ?? "";
+  const eventAway = bet.event?.away ?? "";
+
+  // The outcome we're betting on
+  const betTeam = side === "home" ? eventHome : eventAway;
+  if (!betTeam) return null;
+
+  // Check if the YES outcome matches the bet team (case-insensitive substring)
+  const yesOutcome = match.outcomeMap.Yes.toLowerCase();
+  const betTeamLower = betTeam.toLowerCase();
+
+  if (yesOutcome.includes(betTeamLower) || betTeamLower.includes(yesOutcome)) {
+    return match.tokenIds.yes;
+  }
+
+  const noOutcome = match.outcomeMap.No.toLowerCase();
+  if (noOutcome.includes(betTeamLower) || betTeamLower.includes(noOutcome)) {
+    return match.tokenIds.no;
+  }
+
+  return null;
 }
