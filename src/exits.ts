@@ -8,7 +8,6 @@ import { createLogger } from "./logger.js";
 import { isOnCooldown, markSignaled } from "./cooldown.js";
 import { executeSignal } from "./executor.js";
 import type { ClobClient } from "@polymarket/clob-client";
-import type { MarketMatcher } from "./market-matcher.js";
 import type { PositionTracker } from "./position-tracker.js";
 import type { OrderTracker } from "./order-tracker.js";
 import type { TradeSignal, Position } from "./types.js";
@@ -28,16 +27,15 @@ const noEdgeChecks = new Map<string, number>();
 
 export interface ExitDeps {
   client: ClobClient;
-  matcher: MarketMatcher;
   positions: PositionTracker;
   orders: OrderTracker;
-  activeValueBetEvents: Set<string>;
+  activeValueBetSlugs: Set<string>;
 }
 
 /**
  * Check all open positions for exit signals. Fetches live prices from CLOB REST.
  *
- * Exit rules (no sharp-prob needed):
+ * Exit rules:
  *  1. Event still in value-bets → hold (thesis intact)
  *  2. Event gone + profit ≥ minEdge → take profit
  *  3. Event gone + loss > minEdge → cut loss
@@ -59,14 +57,11 @@ export async function checkAllExits(deps: ExitDeps): Promise<void> {
 
 async function checkExitForToken(position: Position, deps: ExitDeps): Promise<void> {
   try {
-    const { client, matcher, orders, activeValueBetEvents } = deps;
+    const { client, orders, activeValueBetSlugs } = deps;
     const tokenId = position.tokenId;
 
-    const match = matcher.getMatchByToken(tokenId);
-    if (!match || match.active === false) return;
-
     // Check if this position's event still has an active value-bet signal
-    const hasActiveEdge = activeValueBetEvents.has(match.oddsApiEventId);
+    const hasActiveEdge = activeValueBetSlugs.has(position.slug);
 
     // Fetch live price from CLOB REST
     const bestBid = await fetchBestBid(client, tokenId);
@@ -86,7 +81,7 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
 
     log.record("EXIT SIGNAL", {
       tokenId,
-      slug: match.slug,
+      slug: position.slug,
       avgPrice: position.avgPrice,
       bestBid,
       hasActiveEdge,
@@ -104,9 +99,9 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
 
     const signal: TradeSignal = {
       tokenId,
-      slug: match.slug,
+      slug: position.slug,
       side: "SELL",
-      tokenSide: tokenId === match.tokenIds.yes ? "YES" : "NO",
+      tokenSide: position.side,
       price: bestBid,
       size: sellSize,
       edge: 0,
@@ -119,7 +114,7 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
 
     if (config.dryRun) {
       log.info(
-        `[DRY RUN] Would SELL ${sellSize} shares of ${match.slug} @ ${bestBid.toFixed(4)} (${exitResult.reason})`,
+        `[DRY RUN] Would SELL ${sellSize} shares of ${position.slug} @ ${bestBid.toFixed(4)} (${exitResult.reason})`,
       );
       return;
     }

@@ -1,9 +1,7 @@
 // src/order-tracker.ts
 // Tracks resting GTD orders (notional) and signal metadata (for fill logging).
-// Merged from pending-orders.ts + pending-signals.ts.
 
 import { createLogger } from "./logger.js";
-import type { MatchEntry } from "./types.js";
 
 const log = createLogger("orders");
 
@@ -19,9 +17,7 @@ interface PendingOrder {
 
 export interface SignalMeta {
   tokenSide: "YES" | "NO";
-  match: MatchEntry;
-  line: null;
-  sharpProb: null;
+  slug: string;
   netEdge: number;
   kellyFraction: number;
   storedAt: number;

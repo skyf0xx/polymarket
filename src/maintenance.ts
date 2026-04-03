@@ -1,13 +1,12 @@
 // src/maintenance.ts
-// Periodic maintenance: refresh markets, positions, prune stale data, run exits.
+// Periodic maintenance: refresh positions, prune stale data, run exits.
 
 import { createLogger } from "./logger.js";
 import { checkAllExits } from "./exits.js";
 import { getUsdcBalance } from "./wallet.js";
-import { getActiveValueBetEvents } from "./poller.js";
+import { getActiveValueBetSlugs } from "./poller.js";
 import { config } from "./config.js";
 import type { ClobClient } from "@polymarket/clob-client";
-import type { MarketMatcher } from "./market-matcher.js";
 import type { PositionTracker } from "./position-tracker.js";
 import type { OrderTracker } from "./order-tracker.js";
 
@@ -15,7 +14,6 @@ const log = createLogger("maintenance");
 
 export interface MaintenanceDeps {
   client: ClobClient;
-  matcher: MarketMatcher;
   positions: PositionTracker;
   orders: OrderTracker;
   getBankroll: () => number;
@@ -40,7 +38,7 @@ async function runMaintenance(deps: MaintenanceDeps): Promise<void> {
   log.info("Running maintenance cycle...");
 
   try {
-    const { matcher, positions, orders } = deps;
+    const { positions, orders } = deps;
 
     // 1. Re-sync positions from Data API
     await positions.hydrate();
@@ -51,21 +49,19 @@ async function runMaintenance(deps: MaintenanceDeps): Promise<void> {
       deps.setBankroll(freshBalance);
     }
 
-    // 3. Prune expired data
-    matcher.pruneExpired();
+    // 3. Prune expired orders
     orders.pruneExpired();
 
     // 4. Check all open positions for exit signals
     await checkAllExits({
       client: deps.client,
-      matcher,
       positions,
       orders,
-      activeValueBetEvents: getActiveValueBetEvents(),
+      activeValueBetSlugs: getActiveValueBetSlugs(),
     });
 
     log.info(
-      `Maintenance complete: matches=${matcher.size}, positions=${positions.size}, pending=${orders.pendingCount}`,
+      `Maintenance complete: positions=${positions.size}, pending=${orders.pendingCount}`,
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
