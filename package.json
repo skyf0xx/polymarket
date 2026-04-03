@@ -1,13 +1,11 @@
 {
-  "name": "polymarket-copier",
-  "version": "1.0.0",
+  "name": "polymarket-value-bet",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "start:vb": "node dist/value-bet-index.js",
     "dev": "tsx src/index.ts",
-    "dev:vb": "tsx src/value-bet-index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -16,7 +14,6 @@
     "@polymarket/clob-client": "^4.4.0",
     "dotenv": "^17.3.1",
     "ethers": "^5.8.0",
-    "eventemitter3": "^5.0.4",
     "ws": "^8.19.0"
   },
   "devDependencies": {

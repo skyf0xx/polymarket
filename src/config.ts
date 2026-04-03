@@ -42,7 +42,7 @@ function envList(key: string, fallback: string[] = []): string[] {
     .filter(Boolean);
 }
 
-// ── Validated Config Object ──────────────────────────────────────
+// -- Validated Config Object --------------------------------------------------
 
 export const config = {
   // Wallet / CLOB
@@ -52,11 +52,8 @@ export const config = {
 
   // Odds API
   oddsApiKey: env("ODDS_API_KEY"),
-  oddsApiWsUrl: env("ODDS_API_WS_URL", "wss://api.odds-api.io/v3/ws"),
   oddsApiRestUrl: env("ODDS_API_REST_URL", "https://api.odds-api.io"),
-  bookmakerId: env("BOOKMAKER_ID", ""),
   oddsApiSports: envList("ODDS_API_SPORTS", []),
-  oddsApiLeagues: envList("ODDS_API_LEAGUES", []),
 
   // Polymarket
   polymarketSportsTypes: envList("POLYMARKET_SPORTS_TYPES", [
@@ -68,28 +65,18 @@ export const config = {
   polymarketMinLiquidity: envNum("POLYMARKET_MIN_LIQUIDITY", 1000),
   clobApiUrl: "https://clob.polymarket.com",
   gammaApiUrl: "https://gamma-api.polymarket.com",
-  polyWsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/market",
   userWsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/user",
-
-  // Strategy
-  marketMaker: envBool("MARKET_MAKER", false),
 
   // Edge & Sizing
   minEdge: envNum("MIN_EDGE", 0.02),
-  maxEdge: envNum("MAX_EDGE", 0.25),
   minPrice: envNum("MIN_PRICE", 0.1),
-  noLiquidityBand: envNum("NO_LIQUIDITY_BAND", 0.02),
   kellyFraction: envNum("KELLY_FRACTION", 0.25),
   maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
-  maxPositionPct: envNum("MAX_POSITION_PCT", 0.1),
-  maxEventPct: envNum("MAX_EVENT_PCT", 0.15),
 
   // Timing
   cooldownSeconds: envNum("COOLDOWN_SECONDS", 30),
-  debounceMs: envNum("DEBOUNCE_MS", 500),
-  maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000), // 5 min
-  maxSharpProbAgeMs: envNum("MAX_SHARP_PROB_AGE_MS", 5 * 60_000), // 5 min
-  maxNegativeEdgeChecks: envNum("MAX_NEGATIVE_EDGE_CHECKS", 5), // exit after N consecutive ≤0 edge checks
+  maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000),
+  maxNegativeEdgeChecks: envNum("MAX_NEGATIVE_EDGE_CHECKS", 5),
 
   // Operation
   verbose: envBool("VERBOSE", false),
@@ -97,27 +84,23 @@ export const config = {
   dataDir: env("DATA_DIR", "./data"),
   credsFile: env("CREDS_FILE", "./api_creds.json"),
 
-  // Gamma Teams API — league codes for team abbreviation hydration
-  // These are Polymarket/Gamma league slugs, NOT Odds API slugs
+  // Gamma Teams API
   gammaLeagues: envList("GAMMA_LEAGUES", [
     "nba",
     "cbb",
-    "wnba", // basketball
+    "wnba",
     "nfl",
-    "cfb", // american football
-    "mlb", // baseball
+    "cfb",
+    "mlb",
     "atp",
-    "wta", // tennis
-    "epl", // premier league
+    "wta",
+    "epl",
   ]),
 
-  // Maps Gamma/Polymarket league slug (from market slug prefix) → Odds API sport name.
-  // Format: "epl:football,nba:basketball,nfl:american-football"
-  // Used by the pre-filter in market-matcher to only send relevant odds events to the LLM.
+  // League-to-sport mapping for matcher pre-filter
   gammaLeagueToOddsSport: (() => {
     const raw = process.env.GAMMA_LEAGUE_TO_ODDS_API_SPORT ?? "";
     const map = new Map<string, string>([
-      // override with env var
       ["epl", "football"],
       ["nba", "basketball"],
       ["nfl", "american-football"],
@@ -138,10 +121,10 @@ export const config = {
     return map;
   })(),
 
-  // Value Bet Poller (odds-api.io /v3/value-bets)
+  // Value Bet Poller
   valueBetPollIntervalMs: envNum("VALUE_BET_POLL_INTERVAL_MS", 30_000),
 
-  // Anthropic (for market matching)
+  // Anthropic (for market matching LLM)
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   matcherModel: env("MATCHER_MODEL", "claude-haiku-4-5-20251001"),
 

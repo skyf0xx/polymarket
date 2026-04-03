@@ -1,0 +1,210 @@
+// src/exits.ts
+// Exit logic: check open positions against profit/loss thresholds.
+// Sells when value-bet signal disappears (edge gone) and position meets exit criteria.
+// Fetches live prices from CLOB REST (no persistent WS needed).
+
+import { config } from "./config.js";
+import { createLogger } from "./logger.js";
+import { isOnCooldown, markSignaled } from "./cooldown.js";
+import { executeSignal } from "./executor.js";
+import type { ClobClient } from "@polymarket/clob-client";
+import type { MarketMatcher } from "./market-matcher.js";
+import type { PositionTracker } from "./position-tracker.js";
+import type { OrderTracker } from "./order-tracker.js";
+import type { TradeSignal, Position } from "./types.js";
+
+const log = createLogger("exits");
+
+const FEE_RATE = 0.03;
+
+function estimateFee(price: number): number {
+  return FEE_RATE * price * price * (1 - price);
+}
+
+// Consecutive "no value-bet" check counter per token
+const noEdgeChecks = new Map<string, number>();
+
+// -- Public API ---------------------------------------------------------------
+
+export interface ExitDeps {
+  client: ClobClient;
+  matcher: MarketMatcher;
+  positions: PositionTracker;
+  orders: OrderTracker;
+  activeValueBetEvents: Set<string>;
+}
+
+/**
+ * Check all open positions for exit signals. Fetches live prices from CLOB REST.
+ *
+ * Exit rules (no sharp-prob needed):
+ *  1. Event still in value-bets → hold (thesis intact)
+ *  2. Event gone + profit ≥ minEdge → take profit
+ *  3. Event gone + loss > minEdge → cut loss
+ *  4. Event gone + profit > round-trip fees → lock gain
+ *  5. Event gone for N consecutive checks → exit (underwater persistence)
+ */
+export async function checkAllExits(deps: ExitDeps): Promise<void> {
+  const positions = deps.positions.getAllPositions();
+  if (positions.length === 0) return;
+
+  log.debug(`Exit sweep: checking ${positions.length} open position(s)`);
+
+  for (const position of positions) {
+    await checkExitForToken(position, deps);
+  }
+}
+
+// -- Per-Token Exit Check -----------------------------------------------------
+
+async function checkExitForToken(position: Position, deps: ExitDeps): Promise<void> {
+  try {
+    const { client, matcher, orders, activeValueBetEvents } = deps;
+    const tokenId = position.tokenId;
+
+    const match = matcher.getMatchByToken(tokenId);
+    if (!match || match.active === false) return;
+
+    // Check if this position's event still has an active value-bet signal
+    const hasActiveEdge = activeValueBetEvents.has(match.oddsApiEventId);
+
+    // Fetch live price from CLOB REST
+    const bestBid = await fetchBestBid(client, tokenId);
+    if (bestBid === null || bestBid < config.minPrice) return;
+
+    const consecutiveChecks = noEdgeChecks.get(tokenId) ?? 0;
+    const exitResult = checkExit(position, bestBid, hasActiveEdge, consecutiveChecks);
+
+    // Track consecutive checks where value-bet is absent
+    if (!hasActiveEdge) {
+      noEdgeChecks.set(tokenId, consecutiveChecks + 1);
+    } else {
+      noEdgeChecks.delete(tokenId);
+    }
+
+    if (!exitResult.shouldExit) return;
+
+    log.record("EXIT SIGNAL", {
+      tokenId,
+      slug: match.slug,
+      avgPrice: position.avgPrice,
+      bestBid,
+      hasActiveEdge,
+      profitPerShare: exitResult.profitPerShare,
+      ...(exitResult.reason && { reason: exitResult.reason }),
+    });
+
+    if (isOnCooldown(tokenId)) {
+      log.debug(`Cooldown active for exit on ${tokenId}, skipping`);
+      return;
+    }
+
+    const sellSize = Math.floor(position.size);
+    if (sellSize < 1) return;
+
+    const signal: TradeSignal = {
+      tokenId,
+      slug: match.slug,
+      side: "SELL",
+      tokenSide: tokenId === match.tokenIds.yes ? "YES" : "NO",
+      price: bestBid,
+      size: sellSize,
+      edge: 0,
+      kellyFraction: 0,
+      reason: "exit_signal",
+    };
+
+    markSignaled(tokenId);
+    noEdgeChecks.delete(tokenId);
+
+    if (config.dryRun) {
+      log.info(
+        `[DRY RUN] Would SELL ${sellSize} shares of ${match.slug} @ ${bestBid.toFixed(4)} (${exitResult.reason})`,
+      );
+      return;
+    }
+
+    executeSignal(client, signal, orders).catch((err) =>
+      log.error(`Exit dispatch error: ${err.message}`),
+    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`Exit check error for ${position.tokenId}: ${message}`);
+  }
+}
+
+// -- Exit Decision ------------------------------------------------------------
+
+interface ExitResult {
+  shouldExit: boolean;
+  reason?: string;
+  profitPerShare: number;
+}
+
+function checkExit(
+  position: Position,
+  bestBid: number,
+  hasActiveEdge: boolean,
+  consecutiveNoEdgeChecks: number,
+): ExitResult {
+  const profitPerShare = bestBid - position.avgPrice;
+
+  // 1. Thesis intact — value-bet still showing for this event
+  if (hasActiveEdge) return { shouldExit: false, profitPerShare };
+
+  // Edge is gone — evaluate exit conditions
+
+  // 2. Take profit
+  if (profitPerShare >= config.minEdge) {
+    return {
+      shouldExit: true,
+      reason: `take_profit: ${(profitPerShare * 100).toFixed(1)}c/share`,
+      profitPerShare,
+    };
+  }
+
+  // 3. Cut loss — thesis broken and underwater
+  if (profitPerShare < -config.minEdge) {
+    return {
+      shouldExit: true,
+      reason: `loss_cut: P&L ${(profitPerShare * 100).toFixed(1)}c/share`,
+      profitPerShare,
+    };
+  }
+
+  // 4. Lock gain — profit clears round-trip fees
+  const entryFee = estimateFee(position.avgPrice);
+  const exitFee = estimateFee(bestBid);
+  if (profitPerShare >= entryFee + exitFee) {
+    return {
+      shouldExit: true,
+      reason: `lock_gain: ${(profitPerShare * 100).toFixed(1)}c/share (clears fees)`,
+      profitPerShare,
+    };
+  }
+
+  // 5. Underwater persistence — edge gone for too many consecutive checks
+  if (consecutiveNoEdgeChecks >= config.maxNegativeEdgeChecks) {
+    return {
+      shouldExit: true,
+      reason: `underwater_persistence: no edge for ${consecutiveNoEdgeChecks} checks, P&L ${(profitPerShare * 100).toFixed(1)}c/share`,
+      profitPerShare,
+    };
+  }
+
+  return { shouldExit: false, profitPerShare };
+}
+
+// -- REST Price Fetch ---------------------------------------------------------
+
+async function fetchBestBid(client: ClobClient, tokenId: string): Promise<number | null> {
+  try {
+    const { price } = await client.getPrice(tokenId, "SELL");
+    const bid = Number(price);
+    return isFinite(bid) && bid > 0 ? bid : null;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn(`Failed to fetch bestBid for ${tokenId}: ${message}`);
+    return null;
+  }
+}
