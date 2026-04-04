@@ -20,7 +20,10 @@ interface MarketInfo {
 
 const marketCache = new Map<string, MarketInfo>();
 
-async function getMarketInfo(client: ClobClient, tokenId: string): Promise<MarketInfo> {
+async function getMarketInfo(
+  client: ClobClient,
+  tokenId: string,
+): Promise<MarketInfo> {
   const cached = marketCache.get(tokenId);
   if (cached) return cached;
 
@@ -46,13 +49,20 @@ export async function executeSignal(
   try {
     const isBuy = signal.side === "BUY";
 
-    // BUY: enter at sharp signal price
+    // BUY: post just below ask (maker), capped at sharp signal price
     // SELL: FAK into the live bid
-    const { tickSize, negRisk } = await getMarketInfo(client, signal.tokenId);
-    let orderPrice = signal.price;
+    const priceSide = isBuy ? "BUY" : "SELL";
+    const [{ tickSize, negRisk }, { price: bookPrice }] = await Promise.all([
+      getMarketInfo(client, signal.tokenId),
+      client.getPrice(signal.tokenId, priceSide),
+    ]);
 
-    if (!isBuy) {
-      const { price: bookPrice } = await client.getPrice(signal.tokenId, "SELL");
+    let orderPrice: number;
+    if (isBuy) {
+      const bestAsk = Number(bookPrice);
+      const tick = Number(tickSize);
+      orderPrice = Math.min(signal.price, bestAsk - tick);
+    } else {
       orderPrice = Number(bookPrice);
     }
 
