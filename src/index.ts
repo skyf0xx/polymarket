@@ -92,6 +92,7 @@ async function main(): Promise<void> {
   startPoller({
     client,
     orders,
+    positions,
     getBankroll: () => bankroll!,
   });
 

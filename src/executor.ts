@@ -15,9 +15,7 @@ const log = createLogger("executor");
 // The CLOB client logs request errors before throwing — this filters that
 // noise for errors we already handle ourselves, while letting unexpected
 // errors through.
-const SUPPRESSED_SDK_ERRORS = [
-  "no orders found to match with FAK order",
-];
+const SUPPRESSED_SDK_ERRORS = ["no orders found to match with FAK order"];
 
 async function silenceSdkLog<T>(fn: () => Promise<T>): Promise<T> {
   const orig = console.error;
@@ -84,7 +82,7 @@ export async function executeSignal(
     if (isBuy) {
       const bestAsk = Number(bookPrice);
       const tick = Number(tickSize);
-      orderPrice = Math.min(signal.price, bestAsk - tick);
+      orderPrice = signal.price; //Math.min(signal.price, bestAsk - tick);
     } else {
       orderPrice = Number(bookPrice);
     }
@@ -173,7 +171,9 @@ export async function executeSignal(
       signal.side === "SELL" &&
       message.includes("no orders found to match with FAK order")
     ) {
-      log.warn(`SELL FAK no fill ${tag}: market has no resting bids (likely resolved)`);
+      log.warn(
+        `SELL FAK no fill ${tag}: market has no resting bids (likely resolved)`,
+      );
       return false;
     }
     log.error(`Error executing ${tag}: ${message}`);

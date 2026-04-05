@@ -104,6 +104,15 @@ export class PositionTracker {
     return this.positions.get(tokenId)?.totalCost ?? 0;
   }
 
+  /** USDC deployed across all markets for a given event slug. */
+  getEventExposure(slug: string): number {
+    let total = 0;
+    for (const p of this.positions.values()) {
+      if (p.slug === slug) total += p.totalCost;
+    }
+    return total;
+  }
+
   get size(): number {
     return this.positions.size;
   }
