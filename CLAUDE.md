@@ -24,9 +24,11 @@ TypeScript bot that buys mispriced markets on Polymarket using value-bet signals
 ### Signal Sizing & Dispatch (inline in `poller.ts`)
 
 1. Skip if market inactive or token on cooldown (30s)
-2. Kelly sizing: `rawKelly = ev / (1 - bidPrice)`, adjusted by `KELLY_FRACTION` (default 0.25), capped at `MAX_KELLY_PCT`
-3. `size = round(bankroll × adjustedKelly / bidPrice)`
-4. Stash metadata in `OrderTracker`, mark cooldown, dispatch to executor
+2. Convert decimal odds to implied probability: `bidPrice = 1 / decimalOdds`
+3. Normalise EV: `ev = (expectedValue - 100) / 100` (e.g. 108.5 → 0.085)
+4. Kelly sizing: `rawKelly = ev / (decimalOdds - 1)`, adjusted by `KELLY_FRACTION` (default 0.1), capped at `MAX_KELLY_PCT`
+5. `size = round(bankroll × adjustedKelly / bidPrice)`, must meet per-market `orderMinSize` from Gamma
+6. Stash metadata in `OrderTracker`, mark cooldown, dispatch to executor
 
 ### Order Execution (`executor.ts`)
 
@@ -96,6 +98,22 @@ Key env vars:
 - `DRY_RUN=true` — log signals only, no execution (default)
 - `ODDS_API_KEY` — for value-bet API
 - Bankroll fetched on-chain from funder wallet's USDC balance
+
+## API Documentation
+
+When auditing or modifying API interactions, fetch live docs — do not rely on training data:
+
+- **Polymarket**: `https://docs.polymarket.com/llms.txt` (Gamma API, CLOB API, Data API, WebSocket)
+- **Odds API**: `https://docs.odds-api.io/llms.txt` (value-bets, odds, sports)
+
+You have permission to read `.env` and make live API calls to verify data shapes and assumptions.
+
+### Key API details
+
+- **Odds API `expectedValue`**: `bookmakerDecimalOdds / fairDecimalOdds * 100`. A value of 108.5 means Polymarket odds are 8.5% better than fair.
+- **Odds API `bookmakerOdds`**: Decimal odds (e.g. 7.143), NOT probabilities. Convert: `impliedProb = 1 / decimalOdds`.
+- **Gamma `orderMinSize`**: Per-market minimum share count for CLOB orders. Currently 5 for sports markets.
+- **Gamma `orderPriceMinTickSize`**: Per-market tick size (e.g. 0.01). Passed as `TickSize` type to CLOB SDK.
 
 ## Dependencies
 

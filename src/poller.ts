@@ -67,6 +67,7 @@ interface GammaMarket {
   sportsMarketType?: string;
   line?: number;
   orderPriceMinTickSize?: number;
+  orderMinSize?: number;
 }
 
 interface GammaEvent {
@@ -93,6 +94,7 @@ interface ParsedMarket {
   question: string;
   sportsMarketType?: string;
   line?: number;
+  orderMinSize: number;
 }
 
 const slugCache = new Map<string, ResolvedMarket>();
@@ -157,8 +159,10 @@ async function poll(deps: PollerDeps): Promise<void> {
 
   if (bets.length === 0) {
     _activeValueBetSlugs = new Set();
+    console.log(`[DEBUG poll] 0 value bets returned`);
     return;
   }
+  console.log(`[DEBUG poll] ${bets.length} value bet(s): ${bets.map(b => `${b.id}(${b.betSide})`).join(", ")}`);
   log.debug(`Fetched ${bets.length} value bet(s)`);
 
   // Update active slugs for exit logic
@@ -192,16 +196,25 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     resolved = fetched;
   }
 
-  const bidPrice = parseFloat(
+  const decimalOdds = parseFloat(
     bet.bookmakerOdds[bet.betSide as keyof ValueBetBookmakerOdds] ?? "",
   );
-  if (!isFinite(bidPrice) || bidPrice <= 0 || bidPrice >= 1) return;
+  const bidPrice = 1 / decimalOdds;
+  console.log(`[DEBUG processBet] id=${bet.id} slug=${slug} betSide=${bet.betSide} decimalOdds=${decimalOdds} bidPrice=${bidPrice}`);
+  if (!isFinite(bidPrice) || bidPrice <= 0 || bidPrice >= 1) {
+    console.log(`[DEBUG processBet] SKIP invalid bidPrice=${bidPrice}`);
+    return;
+  }
 
   // Find the right market and token for this bet
   const match = resolveToken(bet, resolved);
-  if (!match) return;
+  if (!match) {
+    console.log(`[DEBUG processBet] SKIP resolveToken returned null for ${bet.id}`);
+    return;
+  }
 
   const { tokenId, tokenSide, market } = match;
+  console.log(`[DEBUG processBet] resolved tokenId=${tokenId} tokenSide=${tokenSide} marketActive=${market.active}`);
 
   if (!market.active) {
     log.debug(`Market inactive for ${slug}, skipping`);
@@ -214,16 +227,22 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   }
 
   // Kelly sizing
-  const ev = bet.expectedValue;
-  const rawKelly = ev / (1 - bidPrice);
+  // expectedValue is e.g. 108.5 meaning Polymarket odds are 8.5% better than fair
+  // Kelly for decimal odds: f = edge / (decimalOdds - 1)
+  const ev = (bet.expectedValue - 100) / 100; // normalise to e.g. 0.085
+  const rawKelly = ev / (decimalOdds - 1);
   const adjustedKelly = Math.min(
     rawKelly * config.kellyFraction,
     config.maxKellyPct,
   );
   const suggestedUsdc = deps.getBankroll() * adjustedKelly;
-
   const size = Math.round(suggestedUsdc / bidPrice);
-  if (size < 1) return;
+  const minSize = market.orderMinSize;
+  console.log(`[DEBUG processBet] bankroll=${deps.getBankroll()} ev=${ev} rawKelly=${rawKelly.toFixed(4)} adjustedKelly=${adjustedKelly.toFixed(4)} suggestedUsdc=${suggestedUsdc.toFixed(2)} size=${size} minSize=${minSize}`);
+  if (size < minSize) {
+    console.log(`[DEBUG processBet] SKIP size=${size} below market minimum of ${minSize}`);
+    return;
+  }
 
   const signal: TradeSignal = {
     tokenId,
@@ -305,6 +324,7 @@ async function fetchAndCacheEvent(
         question: m.question,
         sportsMarketType: m.sportsMarketType,
         line: m.line,
+        orderMinSize: m.orderMinSize ?? 5,
       });
     }
 
@@ -351,7 +371,17 @@ function resolveToken(
   resolved: ResolvedMarket,
 ): { tokenId: string; tokenSide: "YES" | "NO"; market: ParsedMarket } | null {
   const side = bet.betSide.toLowerCase();
-  if (side === "draw") return null;
+
+  // Draw bets: match the market whose groupItemTitle starts with "Draw"
+  if (side === "draw") {
+    for (const market of resolved.markets) {
+      if (market.groupItemTitle && normalize(market.groupItemTitle).startsWith("draw")) {
+        return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
+      }
+    }
+    log.warn(`Could not resolve draw market for bet ${bet.id} in slug=${resolved.slug}`);
+    return null;
+  }
 
   const betTeam = side === "home" ? bet.event?.home : bet.event?.away;
   if (!betTeam) return null;
