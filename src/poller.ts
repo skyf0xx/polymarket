@@ -10,6 +10,7 @@ import { isOnCooldown, markSignaled } from "./cooldown.js";
 import { executeSignal } from "./executor.js";
 import type { ClobClient } from "@polymarket/clob-client";
 import type { OrderTracker } from "./order-tracker.js";
+import type { PositionTracker } from "./position-tracker.js";
 import type { TradeSignal } from "./types.js";
 
 const log = createLogger("poller");
@@ -121,6 +122,7 @@ export function getActiveValueBetSlugs(): Set<string> {
 export interface PollerDeps {
   client: ClobClient;
   orders: OrderTracker;
+  positions: PositionTracker;
   getBankroll: () => number;
 }
 
@@ -231,6 +233,22 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     return;
   }
 
+  // Position cap: skip if already at or above per-market or per-event limit
+  const bankroll = deps.getBankroll();
+  const existingPosition = deps.positions.getPositionCost(tokenId);
+  const existingEventExposure = deps.positions.getEventExposure(slug);
+  const maxPosition = bankroll * config.maxPositionPct;
+  const maxEvent = bankroll * config.maxEventPct;
+  const remainingMarketRoom = Math.max(0, maxPosition - existingPosition);
+  const remainingEventRoom = Math.max(0, maxEvent - existingEventExposure);
+  const remainingRoom = Math.min(remainingMarketRoom, remainingEventRoom);
+
+  if (remainingRoom < 1) {
+    const reason = remainingEventRoom < 1 ? "event_cap_reached" : "position_cap_reached";
+    log.debug(`${reason} for ${slug} (existing=$${existingPosition.toFixed(2)} market cap=$${maxPosition.toFixed(2)}, event=$${existingEventExposure.toFixed(2)} event cap=$${maxEvent.toFixed(2)})`);
+    return;
+  }
+
   // Kelly sizing
   // expectedValue is e.g. 108.5 meaning Polymarket odds are 8.5% better than fair
   // Kelly for decimal odds: f = edge / (decimalOdds - 1)
@@ -240,14 +258,12 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     rawKelly * config.kellyFraction,
     config.maxKellyPct,
   );
-  const suggestedUsdc = deps.getBankroll() * adjustedKelly;
-  const size = Math.round(suggestedUsdc / bidPrice);
+  const suggestedUsdc = Math.min(bankroll * adjustedKelly, remainingRoom);
   const minSize = market.orderMinSize;
-  console.log(`[DEBUG processBet] bankroll=${deps.getBankroll()} ev=${ev} rawKelly=${rawKelly.toFixed(4)} adjustedKelly=${adjustedKelly.toFixed(4)} suggestedUsdc=${suggestedUsdc.toFixed(2)} size=${size} minSize=${minSize}`);
-  if (size < minSize) {
-    console.log(`[DEBUG processBet] SKIP size=${size} below market minimum of ${minSize}`);
-    return;
-  }
+  // Also enforce $1 minimum notional (CLOB rejects marketable BUY < $1)
+  const minSizeForNotional = Math.ceil(1 / bidPrice);
+  const size = Math.max(Math.round(suggestedUsdc / bidPrice), minSize, minSizeForNotional);
+  console.log(`[DEBUG processBet] bankroll=${bankroll} ev=${ev} rawKelly=${rawKelly.toFixed(4)} adjustedKelly=${adjustedKelly.toFixed(4)} suggestedUsdc=${suggestedUsdc.toFixed(2)} size=${size} minSize=${minSize} remainingRoom=${remainingRoom.toFixed(2)}`);
 
   const signal: TradeSignal = {
     tokenId,

@@ -65,6 +65,8 @@ export const config = {
   minPrice: envNum("MIN_PRICE", 0.1),
   kellyFraction: envNum("KELLY_FRACTION", 0.25),
   maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
+  maxPositionPct: envNum("MAX_POSITION_PCT", 0.1),
+  maxEventPct: envNum("MAX_EVENT_PCT", 0.15),
 
   // Timing
   cooldownSeconds: envNum("COOLDOWN_SECONDS", 30),
