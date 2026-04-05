@@ -173,8 +173,13 @@ async function poll(deps: PollerDeps): Promise<void> {
   }
   _activeValueBetSlugs = activeSlugs;
 
-  // Process each bet
+  // Process each bet (ML, Totals, Spread supported)
   for (const bet of bets) {
+    const mktName = bet.market.name;
+    if (mktName !== "ML" && mktName !== "Totals" && mktName !== "Spread") {
+      log.debug(`Skipping unsupported market type ${bet.id} (market=${mktName})`);
+      continue;
+    }
     await processBet(deps, bet);
   }
 }
@@ -370,6 +375,57 @@ function resolveToken(
   bet: ValueBet,
   resolved: ResolvedMarket,
 ): { tokenId: string; tokenSide: "YES" | "NO"; market: ParsedMarket } | null {
+  const mktName = bet.market.name;
+
+  // Totals and Spread bets resolve by market type + line, not team name
+  if (mktName === "Totals" || mktName === "Spread") {
+    return resolveLineMarket(bet, resolved);
+  }
+
+  return resolveMoneyline(bet, resolved);
+}
+
+/** Resolve Totals / Spread bets by matching sportsMarketType + line. */
+function resolveLineMarket(
+  bet: ValueBet,
+  resolved: ResolvedMarket,
+): { tokenId: string; tokenSide: "YES" | "NO"; market: ParsedMarket } | null {
+  const hdp = bet.market.hdp;
+  if (hdp == null) {
+    log.warn(`No hdp for ${bet.market.name} bet ${bet.id}`);
+    return null;
+  }
+
+  const gammaType = bet.market.name === "Totals" ? "totals" : "spreads";
+  const side = bet.betSide.toLowerCase();
+
+  // Find the Gamma market with matching type and line
+  // Odds API hdp and Gamma line should match directly, but for spreads
+  // the sign may differ (Odds API from home perspective, Gamma may negate).
+  for (const market of resolved.markets) {
+    if (market.sportsMarketType !== gammaType) continue;
+    if (market.line == null) continue;
+    if (market.line !== hdp && market.line !== -hdp) continue;
+
+    // Totals: betSide "home" = Over (YES), "away" = Under (NO)
+    // Spreads: betSide "home" = home covers (YES), "away" = away covers (NO)
+    const tokenSide: "YES" | "NO" = side === "home" ? "YES" : "NO";
+    const tokenId = tokenSide === "YES" ? market.tokenIds.yes : market.tokenIds.no;
+
+    return { tokenId, tokenSide, market };
+  }
+
+  log.warn(
+    `No ${gammaType} market with line=${hdp} for bet ${bet.id} in slug=${resolved.slug}`,
+  );
+  return null;
+}
+
+/** Resolve moneyline bets (ML + draw) by team name matching. */
+function resolveMoneyline(
+  bet: ValueBet,
+  resolved: ResolvedMarket,
+): { tokenId: string; tokenSide: "YES" | "NO"; market: ParsedMarket } | null {
   const side = bet.betSide.toLowerCase();
 
   // Draw bets: match the market whose groupItemTitle starts with "Draw"
@@ -385,25 +441,28 @@ function resolveToken(
 
   const betTeam = side === "home" ? bet.event?.home : bet.event?.away;
   if (!betTeam) return null;
-  const betTeamLower = normalize(betTeam);
+  const betWords = extractWords(betTeam);
 
+  // Only consider moneyline markets to avoid matching spread/totals markets
   for (const market of resolved.markets) {
+    if (market.sportsMarketType && market.sportsMarketType !== "moneyline") continue;
+
     // negRisk events: team name is in groupItemTitle, outcomes are just Yes/No
     if (market.groupItemTitle) {
-      const titleNorm = normalize(market.groupItemTitle);
-      if (titleNorm.includes(betTeamLower) || betTeamLower.includes(titleNorm)) {
+      const titleWords = extractWords(market.groupItemTitle);
+      if (fuzzyTeamMatch(betWords, titleWords)) {
         return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
       }
       continue;
     }
 
     // Non-negRisk events (e.g. NBA play-in): outcomes contain team names directly
-    const yesNorm = normalize(market.outcomes.yes);
-    const noNorm = normalize(market.outcomes.no);
-    if (yesNorm.includes(betTeamLower) || betTeamLower.includes(yesNorm)) {
+    const yesWords = extractWords(market.outcomes.yes);
+    const noWords = extractWords(market.outcomes.no);
+    if (fuzzyTeamMatch(betWords, yesWords)) {
       return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
     }
-    if (noNorm.includes(betTeamLower) || betTeamLower.includes(noNorm)) {
+    if (fuzzyTeamMatch(betWords, noWords)) {
       return { tokenId: market.tokenIds.no, tokenSide: "NO", market };
     }
   }
@@ -420,6 +479,33 @@ function normalize(s: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
+}
+
+/** Common short tokens that appear in team prefixes/suffixes but carry no identity. */
+const NOISE_WORDS = new Set(["fc", "ac", "sc", "cf", "afc", "fk", "sk", "bk", "if", "de", "e", "la", "le", "el", "al", "von", "van", "du", "da", "do", "dos"]);
+
+/** Extract meaningful words from a team name (normalized, noise-filtered). */
+function extractWords(name: string): string[] {
+  return normalize(name)
+    .split(/[\s.'-]+/)
+    .filter((w) => w.length > 0 && !NOISE_WORDS.has(w));
+}
+
+/**
+ * Fuzzy team name match: true if ≥50% of the shorter word list appears in the
+ * longer one. Handles abbreviations (SL Benfica vs Sport Lisboa e Benfica),
+ * extra qualifiers (FC Unirea 2004 Slobozia vs AFC Unirea Slobozia), and
+ * suffix differences (Celtic Glasgow vs Celtic FC).
+ */
+function fuzzyTeamMatch(a: string[], b: string[]): boolean {
+  if (a.length === 0 || b.length === 0) return false;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  const longerSet = new Set(longer);
+  let hits = 0;
+  for (const word of shorter) {
+    if (longerSet.has(word)) hits++;
+  }
+  return hits >= Math.max(1, Math.ceil(shorter.length * 0.5));
 }
 
 function safeJsonParse<T>(raw: string, fallback: T): T {
