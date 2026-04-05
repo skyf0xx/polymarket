@@ -20,7 +20,8 @@ interface DataApiPosition {
   initialValue: number;
   currentValue: number;
   cashPnl: number;
-  slug: string;
+  slug: string; // market slug (e.g. "sea-udi-com-2026-04-06-udi")
+  eventSlug: string; // event slug (e.g. "sea-udi-com-2026-04-06")
   outcome: string;
   outcomeIndex: number;
   oppositeOutcome: string;
@@ -63,7 +64,7 @@ export class PositionTracker {
 
         this.positions.set(p.asset, {
           tokenId: p.asset,
-          slug: p.slug,
+          slug: p.eventSlug, // use event slug so exit logic matches activeValueBetSlugs
           side,
           avgPrice: p.avgPrice,
           size: Math.floor(p.size), // CLOB only accepts whole integer shares
