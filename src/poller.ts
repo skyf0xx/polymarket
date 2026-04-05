@@ -58,8 +58,8 @@ interface ValueBet {
 interface GammaMarket {
   id: string;
   question: string;
-  outcomes: string;        // JSON-encoded string: '["Yes","No"]'
-  clobTokenIds: string;    // JSON-encoded string: '["token1","token2"]'
+  outcomes: string; // JSON-encoded string: '["Yes","No"]'
+  clobTokenIds: string; // JSON-encoded string: '["token1","token2"]'
   active: boolean;
   closed: boolean;
   acceptingOrders: boolean;
@@ -100,7 +100,9 @@ const slugCache = new Map<string, ResolvedMarket>();
 // Token→slug+side map (for UserStream to resolve fills without matcher)
 const tokenInfoMap = new Map<string, { slug: string; side: "YES" | "NO" }>();
 
-export function getTokenInfo(tokenId: string): { slug: string; side: "YES" | "NO" } | undefined {
+export function getTokenInfo(
+  tokenId: string,
+): { slug: string; side: "YES" | "NO" } | undefined {
   return tokenInfoMap.get(tokenId);
 }
 
@@ -190,8 +192,10 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     resolved = fetched;
   }
 
-  const bidPrice = impliedProbFromBet(bet);
-  if (bidPrice === null) return;
+  const bidPrice = parseFloat(
+    bet.bookmakerOdds[bet.betSide as keyof ValueBetBookmakerOdds] ?? "",
+  );
+  if (!isFinite(bidPrice) || bidPrice <= 0 || bidPrice >= 1) return;
 
   // Find the right market and token for this bet
   const match = resolveToken(bet, resolved);
@@ -212,7 +216,10 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   // Kelly sizing
   const ev = bet.expectedValue;
   const rawKelly = ev / (1 - bidPrice);
-  const adjustedKelly = Math.min(rawKelly * config.kellyFraction, config.maxKellyPct);
+  const adjustedKelly = Math.min(
+    rawKelly * config.kellyFraction,
+    config.maxKellyPct,
+  );
   const suggestedUsdc = deps.getBankroll() * adjustedKelly;
 
   const size = Math.round(suggestedUsdc / bidPrice);
@@ -267,7 +274,9 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
 
 // -- Gamma API ----------------------------------------------------------------
 
-async function fetchAndCacheEvent(slug: string): Promise<ResolvedMarket | null> {
+async function fetchAndCacheEvent(
+  slug: string,
+): Promise<ResolvedMarket | null> {
   try {
     const url = `${config.gammaApiUrl}/events/slug/${slug}`;
     const res = await fetch(url);
@@ -292,7 +301,7 @@ async function fetchAndCacheEvent(slug: string): Promise<ResolvedMarket | null> 
         tokenIds: { yes: tokenIds[0], no: tokenIds[1] },
         outcomes: { yes: outcomes[0], no: outcomes[1] },
         groupItemTitle: m.groupItemTitle,
-        active: m.active && !m.closed && (m.acceptingOrders !== false),
+        active: m.active && !m.closed && m.acceptingOrders !== false,
         question: m.question,
         sportsMarketType: m.sportsMarketType,
         line: m.line,
@@ -321,8 +330,9 @@ async function fetchValueBets(): Promise<ValueBet[]> {
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 
-  const data = await res.json() as ValueBet[] | { error: string };
-  if (!Array.isArray(data)) throw new Error(`Unexpected response: ${JSON.stringify(data)}`);
+  const data = (await res.json()) as ValueBet[] | { error: string };
+  if (!Array.isArray(data))
+    throw new Error(`Unexpected response: ${JSON.stringify(data)}`);
   return data;
 }
 
@@ -334,21 +344,6 @@ function extractSlug(bet: ValueBet): string | null {
   // href = "https://polymarket.com/event/nba-atl-bkn-2026-04-03"
   const parts = href.split("/");
   return parts[parts.length - 1] || null;
-}
-
-function impliedProbFromBet(bet: ValueBet): number | null {
-  const side = bet.betSide.toLowerCase();
-  let oddsStr: string | undefined;
-
-  // Use sharp/reference odds from bet.market (not Polymarket's own price)
-  if (side === "home") oddsStr = bet.market.home;
-  else if (side === "away") oddsStr = bet.market.away;
-  else if (side === "draw") oddsStr = bet.market.draw;
-
-  if (!oddsStr) return null;
-  const decimal = parseFloat(oddsStr);
-  if (!isFinite(decimal) || decimal <= 1) return null;
-  return 1 / decimal;
 }
 
 function resolveToken(
@@ -401,24 +396,37 @@ function resolveToken(
   if (lastWord && lastWord.length >= 4) {
     const candidates: { market: ParsedMarket; titleNorm: string }[] = [];
     for (const market of resolved.markets) {
-      if (!market.groupItemTitle || market.groupItemTitle.toLowerCase().startsWith("draw")) continue;
+      if (
+        !market.groupItemTitle ||
+        market.groupItemTitle.toLowerCase().startsWith("draw")
+      )
+        continue;
       const titleNorm = normalize(market.groupItemTitle);
       if (titleNorm.includes(lastWord)) {
         candidates.push({ market, titleNorm });
       }
     }
     if (candidates.length === 1) {
-      return { tokenId: candidates[0].market.tokenIds.yes, tokenSide: "YES", market: candidates[0].market };
+      return {
+        tokenId: candidates[0].market.tokenIds.yes,
+        tokenSide: "YES",
+        market: candidates[0].market,
+      };
     }
   }
 
-  log.warn(`Could not resolve token for bet ${bet.id} (team=${betTeam}) in slug=${resolved.slug}`);
+  log.warn(
+    `Could not resolve token for bet ${bet.id} (team=${betTeam}) in slug=${resolved.slug}`,
+  );
   return null;
 }
 
 /** Strip diacritics and lowercase for fuzzy team name matching. */
 function normalize(s: string): string {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 function safeJsonParse<T>(raw: string, fallback: T): T {
