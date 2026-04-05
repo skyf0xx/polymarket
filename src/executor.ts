@@ -11,6 +11,29 @@ import type { TradeSignal } from "./types.js";
 
 const log = createLogger("executor");
 
+// Selectively suppress SDK's own console.error for known, handled errors.
+// The CLOB client logs request errors before throwing — this filters that
+// noise for errors we already handle ourselves, while letting unexpected
+// errors through.
+const SUPPRESSED_SDK_ERRORS = [
+  "no orders found to match with FAK order",
+];
+
+async function silenceSdkLog<T>(fn: () => Promise<T>): Promise<T> {
+  const orig = console.error;
+  console.error = (...args: unknown[]) => {
+    const msg = args.map(String).join(" ");
+    if (!SUPPRESSED_SDK_ERRORS.some((known) => msg.includes(known))) {
+      orig(...args);
+    }
+  };
+  try {
+    return await fn();
+  } finally {
+    console.error = orig;
+  }
+}
+
 // -- Market Info Cache --------------------------------------------------------
 
 interface MarketInfo {
@@ -85,15 +108,17 @@ export async function executeSignal(
           { tickSize, negRisk },
           OrderType.GTD,
         )
-      : await client.createAndPostMarketOrder(
-          {
-            tokenID: signal.tokenId,
-            price: orderPrice,
-            amount: size,
-            side: sdkSide,
-          },
-          { tickSize, negRisk },
-          OrderType.FAK,
+      : await silenceSdkLog(() =>
+          client.createAndPostMarketOrder(
+            {
+              tokenID: signal.tokenId,
+              price: orderPrice,
+              amount: size,
+              side: sdkSide,
+            },
+            { tickSize, negRisk },
+            OrderType.FAK,
+          ),
         );
 
     if (resp?.success) {
@@ -142,6 +167,15 @@ export async function executeSignal(
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    // FAK SELL into a resolved/illiquid market — no resting orders to match against.
+    // This is expected when a position's market has closed; treat as a soft failure.
+    if (
+      signal.side === "SELL" &&
+      message.includes("no orders found to match with FAK order")
+    ) {
+      log.warn(`SELL FAK no fill ${tag}: market has no resting bids (likely resolved)`);
+      return false;
+    }
     log.error(`Error executing ${tag}: ${message}`);
     return false;
   }
