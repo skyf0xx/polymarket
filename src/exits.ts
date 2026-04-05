@@ -14,10 +14,15 @@ import type { TradeSignal, Position } from "./types.js";
 
 const log = createLogger("exits");
 
-const FEE_RATE = 0.03;
-
-function estimateFee(price: number): number {
-  return FEE_RATE * price * price * (1 - price);
+async function fetchFeeRate(client: ClobClient, tokenId: string): Promise<number> {
+  try {
+    const result = await (client as any).getFeeRate(tokenId);
+    return Number(result?.base_fee ?? result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn(`Failed to fetch fee rate for ${tokenId}: ${message}, using 0`);
+    return 0;
+  }
 }
 
 // Consecutive "no value-bet" check counter per token
@@ -63,12 +68,15 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
     // Check if this position's event still has an active value-bet signal
     const hasActiveEdge = activeValueBetSlugs.has(position.slug);
 
-    // Fetch live price from CLOB REST
-    const bestBid = await fetchBestBid(client, tokenId);
+    // Fetch live price and fee rate from CLOB REST
+    const [bestBid, feeRateBps] = await Promise.all([
+      fetchBestBid(client, tokenId),
+      fetchFeeRate(client, tokenId),
+    ]);
     if (bestBid === null || bestBid < config.minPrice) return;
 
     const consecutiveChecks = noEdgeChecks.get(tokenId) ?? 0;
-    const exitResult = checkExit(position, bestBid, hasActiveEdge, consecutiveChecks);
+    const exitResult = checkExit(position, bestBid, hasActiveEdge, consecutiveChecks, feeRateBps);
 
     // Track consecutive checks where value-bet is absent
     if (!hasActiveEdge) {
@@ -141,6 +149,7 @@ function checkExit(
   bestBid: number,
   hasActiveEdge: boolean,
   consecutiveNoEdgeChecks: number,
+  feeRateBps: number,
 ): ExitResult {
   const profitPerShare = bestBid - position.avgPrice;
 
@@ -168,9 +177,10 @@ function checkExit(
   }
 
   // 4. Lock gain — profit clears round-trip fees
-  const entryFee = estimateFee(position.avgPrice);
-  const exitFee = estimateFee(bestBid);
-  if (profitPerShare >= entryFee + exitFee) {
+  const feeFactor = feeRateBps / 10000;
+  const entryFee = position.size * feeFactor * position.avgPrice * (1 - position.avgPrice);
+  const exitFee = position.size * feeFactor * bestBid * (1 - bestBid);
+  if (profitPerShare * position.size >= entryFee + exitFee) {
     return {
       shouldExit: true,
       reason: `lock_gain: ${(profitPerShare * 100).toFixed(1)}c/share (clears fees)`,
