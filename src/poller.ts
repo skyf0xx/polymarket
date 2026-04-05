@@ -357,61 +357,24 @@ function resolveToken(
   if (!betTeam) return null;
   const betTeamLower = normalize(betTeam);
 
-  // Strategy 1: Match by groupItemTitle (negRisk events — one market per team,
-  // outcomes are just Yes/No, team name is in groupItemTitle).
-  // Betting ON a team = buying YES on that team's market.
   for (const market of resolved.markets) {
-    if (!market.groupItemTitle) continue;
-    const titleNorm = normalize(market.groupItemTitle);
-    if (titleNorm.includes(betTeamLower) || betTeamLower.includes(titleNorm)) {
-      return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
+    // negRisk events: team name is in groupItemTitle, outcomes are just Yes/No
+    if (market.groupItemTitle) {
+      const titleNorm = normalize(market.groupItemTitle);
+      if (titleNorm.includes(betTeamLower) || betTeamLower.includes(titleNorm)) {
+        return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
+      }
+      continue;
     }
-  }
 
-  // Strategy 2: Match by outcome names (non-negRisk events — outcomes contain
-  // team names directly, e.g., ["Atlanta Hawks", "Brooklyn Nets"]).
-  for (const market of resolved.markets) {
+    // Non-negRisk events (e.g. NBA play-in): outcomes contain team names directly
     const yesNorm = normalize(market.outcomes.yes);
     const noNorm = normalize(market.outcomes.no);
-
     if (yesNorm.includes(betTeamLower) || betTeamLower.includes(yesNorm)) {
       return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
     }
     if (noNorm.includes(betTeamLower) || betTeamLower.includes(noNorm)) {
       return { tokenId: market.tokenIds.no, tokenSide: "NO", market };
-    }
-  }
-
-  // Strategy 3: Match by question text (e.g., "Will Udinese Calcio win on 2026-04-06?")
-  for (const market of resolved.markets) {
-    if (normalize(market.question).includes(betTeamLower)) {
-      return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
-    }
-  }
-
-  // Strategy 4: Last-word match (handles "Atletico Tucuman" vs "CA Tucumán" —
-  // different prefixes but same city name)
-  const betWords = betTeamLower.split(/\s+/);
-  const lastWord = betWords[betWords.length - 1];
-  if (lastWord && lastWord.length >= 4) {
-    const candidates: { market: ParsedMarket; titleNorm: string }[] = [];
-    for (const market of resolved.markets) {
-      if (
-        !market.groupItemTitle ||
-        market.groupItemTitle.toLowerCase().startsWith("draw")
-      )
-        continue;
-      const titleNorm = normalize(market.groupItemTitle);
-      if (titleNorm.includes(lastWord)) {
-        candidates.push({ market, titleNorm });
-      }
-    }
-    if (candidates.length === 1) {
-      return {
-        tokenId: candidates[0].market.tokenIds.yes,
-        tokenSide: "YES",
-        market: candidates[0].market,
-      };
     }
   }
 
