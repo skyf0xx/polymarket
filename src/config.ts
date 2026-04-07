@@ -73,6 +73,15 @@ export const config = {
   maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000),
   maxNegativeEdgeChecks: envNum("MAX_NEGATIVE_EDGE_CHECKS", 5),
 
+  // Exit thresholds
+  // Minimum price improvement as a fraction of entry price to trigger lock_gain.
+  // e.g. 0.05 = price must improve by ≥5% of avgPrice (0.50 entry → needs 0.525 bid).
+  // Scales correctly across the full 0.10–0.90 price range.
+  minLockGainPricePct: envNum("MIN_LOCK_GAIN_PRICE_PCT", 0.05),
+  // Minimum gross profit as a fraction of position cost (avgPrice × size) to trigger lock_gain.
+  // e.g. 0.03 = must earn ≥3% of what was deployed. Prevents noise exits on large cheap positions.
+  minLockGainReturnPct: envNum("MIN_LOCK_GAIN_RETURN_PCT", 0.03),
+
   // Operation
   verbose: envBool("VERBOSE", false),
   dryRun: envBool("DRY_RUN", true),
