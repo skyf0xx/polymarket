@@ -172,11 +172,23 @@ function checkExit(
     };
   }
 
-  // 4. Lock gain — profit clears round-trip fees
+  // 4. Lock gain — profit clears round-trip fees AND meets minimum per-share/notional floors.
+  //
+  // Fee model: fee = C × feeRate × p × (1 - p)
+  // where C = size (contracts), feeRate from /fee-rate endpoint, p = price.
+  // Round-trip = entry fee + exit fee.
   const feeFactor = feeRateBps / 10000;
   const entryFee = position.size * feeFactor * position.avgPrice * (1 - position.avgPrice);
   const exitFee = position.size * feeFactor * bestBid * (1 - bestBid);
-  if (profitPerShare * position.size >= entryFee + exitFee) {
+  const totalFees = entryFee + exitFee;
+  const grossProfit = profitPerShare * position.size;
+
+  const positionCost = position.avgPrice * position.size;
+  const meetsPerShareFloor = profitPerShare >= position.avgPrice * config.minLockGainPricePct;
+  const meetsNotionalFloor = grossProfit >= positionCost * config.minLockGainReturnPct;
+  const clearsFees = grossProfit >= totalFees;
+
+  if (meetsPerShareFloor && meetsNotionalFloor && clearsFees) {
     return {
       shouldExit: true,
       reason: `lock_gain: ${(profitPerShare * 100).toFixed(1)}c/share (clears fees)`,
