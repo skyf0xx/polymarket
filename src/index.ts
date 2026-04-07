@@ -10,6 +10,7 @@ import { OrderTracker } from "./order-tracker.js";
 import { UserStream } from "./user-stream.js";
 import { startPoller, stopPoller } from "./poller.js";
 import { startMaintenance, stopMaintenance } from "./maintenance.js";
+import { startHeartbeat } from "./heartbeat.js";
 import { getUsdcBalance } from "./wallet.js";
 import { readFileSync, existsSync, writeFileSync, renameSync } from "fs";
 
@@ -88,6 +89,10 @@ async function main(): Promise<void> {
   const userStream = new UserStream(positions, orders, config.credsFile);
   userStream.start();
 
+  // 5b. Start heartbeat (keeps open orders alive — CLOB cancels on 10s lapse)
+  const signerAddress = new ethers.Wallet(config.privateKey).address;
+  const stopHeartbeat = startHeartbeat(config.credsFile, signerAddress);
+
   // 6. Start poller (sole signal source)
   startPoller({
     client,
@@ -124,6 +129,7 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     log.info(`Received ${signal}, shutting down...`);
     clearInterval(healthTimer);
+    stopHeartbeat();
     stopPoller();
     stopMaintenance();
     userStream.destroy();
