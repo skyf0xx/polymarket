@@ -82,7 +82,7 @@ export async function executeSignal(
     if (isBuy) {
       const bestAsk = Number(bookPrice);
       const tick = Number(tickSize);
-      orderPrice = signal.price; //Math.min(signal.price, bestAsk - tick);
+      orderPrice = Math.round(signal.price / tick) * tick; //Math.min(signal.price, bestAsk - tick);
     } else {
       orderPrice = Number(bookPrice);
     }
@@ -120,7 +120,9 @@ export async function executeSignal(
         );
 
     if (resp?.success) {
-      log.info(`Order placed: ${signal.side} ${size} ${signal.slug} @ ${orderPrice} (orderId=${resp.orderID})`);
+      log.info(
+        `Order placed: ${signal.side} ${size} ${signal.slug} @ ${orderPrice} (orderId=${resp.orderID})`,
+      );
 
       if (orders && resp.orderID && isBuy) {
         orders.trackOrder(resp.orderID, signal.tokenId, orderPrice, size);
