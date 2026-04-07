@@ -14,10 +14,11 @@ import type { TradeSignal, Position } from "./types.js";
 
 const log = createLogger("exits");
 
-async function fetchFeeRate(client: ClobClient, tokenId: string): Promise<number> {
+async function fetchFeeRate(_client: ClobClient, tokenId: string): Promise<number> {
   try {
-    const result = await (client as any).getFeeRate(tokenId);
-    return Number(result?.base_fee ?? result);
+    const res = await fetch("https://clob.polymarket.com/fee-rate");
+    const data = await res.json() as { base_fee?: number };
+    return Number(data.base_fee ?? 0);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.warn(`Failed to fetch fee rate for ${tokenId}: ${message}, using 0`);
