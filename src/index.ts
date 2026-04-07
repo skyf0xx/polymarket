@@ -31,8 +31,8 @@ function makeClobClient(signer: ethers.Wallet, creds?: ApiKeyCreds): ClobClient 
   );
 }
 
-async function initClobClient(): Promise<ClobClient> {
-  const provider = new ethers.providers.JsonRpcProvider(config.polygonRpc);
+async function initClobClient(): Promise<{ client: ClobClient; signer: ethers.Wallet }> {
+  const provider = new ethers.providers.JsonRpcProvider(config.polygonRpc, 137);
   const signer = new ethers.Wallet(config.privateKey, provider);
 
   log.info(`Signer: ${signer.address}`);
@@ -42,7 +42,7 @@ async function initClobClient(): Promise<ClobClient> {
     try {
       const creds = JSON.parse(readFileSync(config.credsFile, "utf-8")) as ApiKeyCreds;
       log.info(`Loaded API credentials from ${config.credsFile}`);
-      return makeClobClient(signer, creds);
+      return { client: makeClobClient(signer, creds), signer };
     } catch {
       log.warn("Could not parse creds file, will create new credentials");
     }
@@ -54,7 +54,7 @@ async function initClobClient(): Promise<ClobClient> {
   writeFileSync(tmp, JSON.stringify(creds, null, 2));
   renameSync(tmp, config.credsFile);
   log.info("API credentials created and saved");
-  return makeClobClient(signer, creds);
+  return { client: makeClobClient(signer, creds), signer };
 }
 
 // -- Main ---------------------------------------------------------------------
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   log.info("==============================================");
 
   // 1. Init CLOB client
-  const client = await initClobClient();
+  const { client, signer } = await initClobClient();
 
   // 2. Fetch bankroll
   let bankroll = await getUsdcBalance();
@@ -104,6 +104,7 @@ async function main(): Promise<void> {
   // 7. Start maintenance (refresh data + exit sweep every 5 min)
   startMaintenance({
     client,
+    signer,
     positions,
     orders,
     getBankroll: () => bankroll!,

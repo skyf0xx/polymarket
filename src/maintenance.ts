@@ -1,8 +1,10 @@
 // src/maintenance.ts
 // Periodic maintenance: refresh positions, prune stale data, run exits.
 
+import { ethers } from "ethers";
 import { createLogger } from "./logger.js";
 import { checkAllExits } from "./exits.js";
+import { redeemResolvedPositions } from "./redeemer.js";
 import { getUsdcBalance } from "./wallet.js";
 import { getActiveValueBetSlugs } from "./poller.js";
 import { config } from "./config.js";
@@ -14,6 +16,7 @@ const log = createLogger("maintenance");
 
 export interface MaintenanceDeps {
   client: ClobClient;
+  signer: ethers.Signer;
   positions: PositionTracker;
   orders: OrderTracker;
   getBankroll: () => number;
@@ -52,7 +55,10 @@ async function runMaintenance(deps: MaintenanceDeps): Promise<void> {
     // 3. Prune expired orders
     orders.pruneExpired();
 
-    // 4. Check all open positions for exit signals
+    // 4. Redeem resolved positions on-chain
+    await redeemResolvedPositions(deps.signer, positions);
+
+    // 5. Check all open positions for exit signals
     await checkAllExits({
       client: deps.client,
       positions,
