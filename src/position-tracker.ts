@@ -52,6 +52,30 @@ export class PositionTracker {
       }
 
       const apiPositions: DataApiPosition[] = await res.json();
+      const freshTokenIds = new Set(apiPositions.filter(p => Math.floor(p.size) > 0).map(p => p.asset));
+
+      // Detect positions that disappeared since last hydration — market resolved or manually closed elsewhere
+      for (const [tokenId, held] of this.positions) {
+        if (!freshTokenIds.has(tokenId)) {
+          // cashPnl = (exitPrice - avgPrice) * size  →  exitPrice = avgPrice + cashPnl/size
+          const cashPnl = (held as Position & { _cashPnl?: number })._cashPnl ?? 0;
+          const exitPrice = Math.round((held.avgPrice + cashPnl / held.size) * 10000) / 10000;
+          const profitPerShare = exitPrice - held.avgPrice;
+          log.record("TRADE_CLOSED", {
+            ts: new Date().toISOString(),
+            slug: held.slug,
+            side: held.side,
+            entryPrice: Math.round(held.avgPrice * 10000) / 10000,
+            exitPrice,
+            size: held.size,
+            edgeAtEntry: held.edgeAtEntry ?? null,
+            kellyAtEntry: held.kellyAtEntry ?? null,
+            exitReason: "resolved_or_manual",
+            profitPerShare: Math.round(profitPerShare * 10000) / 10000,
+            totalProfit: Math.round(profitPerShare * held.size * 100) / 100,
+          });
+        }
+      }
 
       this.positions.clear();
 
@@ -62,7 +86,7 @@ export class PositionTracker {
         const side: "YES" | "NO" =
           p.outcome === "Yes" || p.outcomeIndex === 0 ? "YES" : "NO";
 
-        this.positions.set(p.asset, {
+        const pos: Position & { _cashPnl?: number } = {
           tokenId: p.asset,
           slug: p.eventSlug, // use event slug so exit logic matches activeValueBetSlugs
           side,
@@ -70,7 +94,9 @@ export class PositionTracker {
           size: Math.floor(p.size), // CLOB only accepts whole integer shares
           totalCost: p.initialValue,
           openedAt: Date.now(),
-        });
+        };
+        pos._cashPnl = p.cashPnl;
+        this.positions.set(p.asset, pos);
       }
 
       log.info(`Hydrated ${this.positions.size} position(s) from Data API`);
@@ -128,6 +154,8 @@ export class PositionTracker {
     side: "YES" | "NO",
     price: number,
     size: number,
+    edgeAtEntry?: number,
+    kellyAtEntry?: number,
   ): void {
     const existing = this.positions.get(tokenId);
 
@@ -149,24 +177,18 @@ export class PositionTracker {
         size,
         totalCost: price * size,
         openedAt: Date.now(),
+        edgeAtEntry,
+        kellyAtEntry,
       });
     }
 
-    log.record("BUY recorded", {
-      tokenId,
-      slug,
-      side,
-      price,
-      size,
-      avgPrice: this.positions.get(tokenId)!.avgPrice,
-      totalSize: this.positions.get(tokenId)!.size,
-    });
+    log.info(`BUY recorded: ${slug} ${size} @ ${price}`);
   }
 
   /**
    * Record a sell: reduces position size. Removes position if fully closed.
    */
-  recordSell(tokenId: string, price: number, size: number): void {
+  recordSell(tokenId: string, price: number, size: number, exitReason?: string): void {
     const existing = this.positions.get(tokenId);
     if (!existing) {
       log.warn(`Sell recorded for unknown position: ${tokenId}`);
@@ -175,21 +197,28 @@ export class PositionTracker {
 
     const soldSize = Math.min(size, existing.size);
     const costReduced = existing.avgPrice * soldSize;
-    const profit = (price - existing.avgPrice) * soldSize;
+    const profitPerShare = price - existing.avgPrice;
+    const totalProfit = profitPerShare * soldSize;
 
     existing.size -= soldSize;
     existing.totalCost -= costReduced;
 
-    log.record("SELL recorded", {
-      tokenId,
-      slug: existing.slug,
-      price,
-      size: soldSize,
-      profit: Math.round(profit * 100) / 100,
-      remainingSize: existing.size,
-    });
+    log.info(`SELL recorded: ${existing.slug} ${soldSize} @ ${price} (remaining: ${existing.size})`);
 
     if (existing.size <= 0) {
+      log.record("TRADE_CLOSED", {
+        ts: new Date().toISOString(),
+        slug: existing.slug,
+        side: existing.side,
+        entryPrice: Math.round(existing.avgPrice * 10000) / 10000,
+        exitPrice: Math.round(price * 10000) / 10000,
+        size: soldSize,
+        edgeAtEntry: existing.edgeAtEntry ?? null,
+        kellyAtEntry: existing.kellyAtEntry ?? null,
+        exitReason: exitReason ?? null,
+        profitPerShare: Math.round(profitPerShare * 10000) / 10000,
+        totalProfit: Math.round(totalProfit * 100) / 100,
+      });
       this.positions.delete(tokenId);
       log.info(`Position closed: ${tokenId} (${existing.slug})`);
     }

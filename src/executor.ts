@@ -120,17 +120,7 @@ export async function executeSignal(
         );
 
     if (resp?.success) {
-      log.record(`Order placed`, {
-        tokenId: signal.tokenId,
-        slug: signal.slug,
-        side: signal.side,
-        price: orderPrice,
-        size,
-        edge: signal.edge,
-        reason: signal.reason,
-        orderId: resp.orderID,
-        success: true,
-      });
+      log.info(`Order placed: ${signal.side} ${size} ${signal.slug} @ ${orderPrice} (orderId=${resp.orderID})`);
 
       if (orders && resp.orderID && isBuy) {
         orders.trackOrder(resp.orderID, signal.tokenId, orderPrice, size);

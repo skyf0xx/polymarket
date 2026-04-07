@@ -87,15 +87,7 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
 
     if (!exitResult.shouldExit) return;
 
-    log.record("EXIT SIGNAL", {
-      tokenId,
-      slug: position.slug,
-      avgPrice: position.avgPrice,
-      bestBid,
-      hasActiveEdge,
-      profitPerShare: exitResult.profitPerShare,
-      ...(exitResult.reason && { reason: exitResult.reason }),
-    });
+    log.info(`EXIT SIGNAL: ${position.slug} bestBid=${bestBid.toFixed(4)} reason=${exitResult.reason}`);
 
     if (isOnCooldown(tokenId)) {
       log.debug(`Cooldown active for exit on ${tokenId}, skipping`);
@@ -104,6 +96,9 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
 
     const sellSize = Math.floor(position.size);
     if (sellSize < 1) return;
+
+    // Stash exit reason on position so recordSell can include it in TRADE_CLOSED
+    position.exitReason = exitResult.reason;
 
     const signal: TradeSignal = {
       tokenId,

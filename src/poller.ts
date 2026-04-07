@@ -289,16 +289,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     kellyFraction: rawKelly,
   });
 
-  log.record(`SIGNAL BUY`, {
-    tokenId,
-    slug,
-    price: bidPrice,
-    size,
-    edge: ev,
-    kellyFraction: rawKelly,
-    reason: "value_bet_confirmed",
-    dryRun: config.dryRun,
-  });
+  log.info(`SIGNAL BUY: ${slug} ${size} @ ${bidPrice.toFixed(4)} edge=${(ev * 100).toFixed(1)}% kelly=${(rawKelly * 100).toFixed(1)}%`);
 
   if (config.dryRun) {
     log.info(

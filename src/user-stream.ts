@@ -195,23 +195,24 @@ export class UserStream {
     });
 
     if (trade.side === "BUY") {
+      const signal = this.orders.consumeSignal(tokenId);
       const existing = this.positions.getPosition(tokenId);
       if (existing) {
-        this.positions.recordBuy(tokenId, existing.slug, existing.side, price, size);
+        this.positions.recordBuy(tokenId, existing.slug, existing.side, price, size, signal?.netEdge, signal?.kellyFraction);
       } else {
         const info = getTokenInfo(tokenId);
         if (!info) {
           log.warn(`BUY trade for unknown token, cannot record: ${tokenId}`);
           return;
         }
-        this.positions.recordBuy(tokenId, info.slug, info.side, price, size);
+        this.positions.recordBuy(tokenId, info.slug, info.side, price, size, signal?.netEdge, signal?.kellyFraction);
       }
 
       // Clear pending orders — filled notional is now a real position
       this.orders.removeOrdersByToken(tokenId);
-      this.orders.consumeSignal(tokenId);
     } else {
-      this.positions.recordSell(tokenId, price, size);
+      const position = this.positions.getPosition(tokenId);
+      this.positions.recordSell(tokenId, price, size, position?.exitReason);
     }
   }
 
