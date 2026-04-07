@@ -11,6 +11,9 @@ export interface Position {
   size: number;
   totalCost: number;
   openedAt: number;
+  edgeAtEntry?: number;
+  kellyAtEntry?: number;
+  exitReason?: string;
 }
 
 // -- Trade Signals ------------------------------------------------------------

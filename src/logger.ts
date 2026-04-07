@@ -63,8 +63,8 @@ function log(
   }
 
   // Errors always persist to errors.jsonl (handled above in the error branch).
-  // Non-error records persist to trades.jsonl only in dry-run mode.
-  if (persist && level !== "error" && config.dryRun) {
+  // Non-error records always persist to trades.jsonl.
+  if (persist && level !== "error") {
     writeToFile(entry);
   }
 }
