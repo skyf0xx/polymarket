@@ -31,8 +31,15 @@ interface DataApiPosition {
   mergeable: boolean;
 }
 
+export interface RedeemablePosition {
+  tokenId: string;
+  slug: string;
+  conditionId: string;
+}
+
 export class PositionTracker {
   private positions = new Map<string, Position>();
+  private redeemablePositions = new Map<string, RedeemablePosition>(); // keyed by tokenId
 
   // ── Public API ──────────────────────────────────────────────────
 
@@ -53,6 +60,7 @@ export class PositionTracker {
 
       const apiPositions: DataApiPosition[] = await res.json();
       const freshTokenIds = new Set(apiPositions.filter(p => Math.floor(p.size) > 0).map(p => p.asset));
+      this.redeemablePositions.clear();
 
       // Detect positions that disappeared since last hydration — market resolved or manually closed elsewhere
       for (const [tokenId, held] of this.positions) {
@@ -86,6 +94,15 @@ export class PositionTracker {
         const side: "YES" | "NO" =
           p.outcome === "Yes" || p.outcomeIndex === 0 ? "YES" : "NO";
 
+        if (p.redeemable) {
+          this.redeemablePositions.set(p.asset, {
+            tokenId: p.asset,
+            slug: p.eventSlug,
+            conditionId: p.conditionId,
+          });
+          continue; // resolved — don't track as open position
+        }
+
         const pos: Position & { _cashPnl?: number } = {
           tokenId: p.asset,
           slug: p.eventSlug, // use event slug so exit logic matches activeValueBetSlugs
@@ -99,11 +116,18 @@ export class PositionTracker {
         this.positions.set(p.asset, pos);
       }
 
-      log.info(`Hydrated ${this.positions.size} position(s) from Data API`);
+      log.info(
+        `Hydrated ${this.positions.size} position(s), ${this.redeemablePositions.size} redeemable from Data API`,
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       log.error(`Failed to hydrate positions: ${message}`);
     }
+  }
+
+  /** Get all positions with redeemable=true from the last hydration. */
+  getRedeemable(): RedeemablePosition[] {
+    return [...this.redeemablePositions.values()];
   }
 
   /** Get position for a token. */
