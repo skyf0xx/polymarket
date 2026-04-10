@@ -65,7 +65,7 @@ export class PositionTracker {
       }
 
       const apiPositions: DataApiPosition[] = await res.json();
-      const freshTokenIds = new Set(apiPositions.filter(p => Math.floor(p.size) > 0).map(p => p.asset));
+      const freshTokenIds = new Set(apiPositions.filter(p => p.size > 0).map(p => p.asset));
       this.redeemablePositions.clear();
 
       // Detect positions that disappeared since last hydration — market resolved or manually closed elsewhere
