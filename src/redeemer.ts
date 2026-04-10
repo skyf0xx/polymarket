@@ -32,29 +32,31 @@ export async function redeemResolvedPositions(
   // Deduplicate by conditionId — both YES and NO tokens share one conditionId,
   // so we only need one redeemPositions call per market.
   const seen = new Set<string>();
-
-  for (const pos of redeemable) {
-    if (seen.has(pos.conditionId)) continue;
+  const unique = redeemable.filter(pos => {
+    if (seen.has(pos.conditionId)) return false;
     seen.add(pos.conditionId);
+    return true;
+  });
 
-    try {
-      log.info(`Redeeming conditionId=${pos.conditionId} slug=${pos.slug}`);
+  // Fire all txs in parallel — don't block maintenance on confirmations.
+  for (const pos of unique) {
+    const { conditionId, slug } = pos;
+    log.info(`Redeeming conditionId=${conditionId} slug=${slug}`);
 
-      const tx: ethers.ContractTransaction = await ctf.redeemPositions(
-        USDC_ADDRESS,
-        ZERO_BYTES32,
-        pos.conditionId,
-        [1, 2], // both YES and NO index sets
-      );
-
-      log.info(`Redeem tx sent: ${tx.hash} (conditionId=${pos.conditionId})`);
-      const receipt = await tx.wait(1);
-      log.info(
-        `Redeem confirmed: block=${receipt.blockNumber} conditionId=${pos.conditionId}`,
-      );
-    } catch (err: unknown) {
+    ctf.redeemPositions(
+      USDC_ADDRESS,
+      ZERO_BYTES32,
+      conditionId,
+      [1, 2], // both YES and NO index sets
+      { maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei") },
+    ).then((tx: ethers.ContractTransaction) => {
+      log.info(`Redeem tx sent: ${tx.hash} (conditionId=${conditionId})`);
+      return tx.wait(1);
+    }).then((receipt: ethers.ContractReceipt) => {
+      log.info(`Redeem confirmed: block=${receipt.blockNumber} conditionId=${conditionId}`);
+    }).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
-      log.error(`Redeem failed for conditionId=${pos.conditionId}: ${message}`);
-    }
+      log.error(`Redeem failed for conditionId=${conditionId}: ${message}`);
+    });
   }
 }
