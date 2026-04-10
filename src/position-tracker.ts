@@ -40,6 +40,12 @@ export interface RedeemablePosition {
 export class PositionTracker {
   private positions = new Map<string, Position>();
   private redeemablePositions = new Map<string, RedeemablePosition>(); // keyed by tokenId
+  private pendingSignals = new Map<string, { edgeAtEntry: number; kellyAtEntry: number }>(); // keyed by tokenId
+
+  /** Store signal metadata before order execution so it survives reconnects and catch-up replays. */
+  storePendingSignal(tokenId: string, edgeAtEntry: number, kellyAtEntry: number): void {
+    this.pendingSignals.set(tokenId, { edgeAtEntry, kellyAtEntry });
+  }
 
   // ── Public API ──────────────────────────────────────────────────
 
@@ -182,6 +188,9 @@ export class PositionTracker {
     kellyAtEntry?: number,
   ): void {
     const existing = this.positions.get(tokenId);
+    const pending = this.pendingSignals.get(tokenId);
+    const resolvedEdge = pending?.edgeAtEntry ?? edgeAtEntry;
+    const resolvedKelly = pending?.kellyAtEntry ?? kellyAtEntry;
 
     if (existing) {
       // Weighted average cost basis
@@ -192,6 +201,9 @@ export class PositionTracker {
       existing.avgPrice = newAvgPrice;
       existing.size = newSize;
       existing.totalCost = newTotalCost;
+      // Backfill if not yet set (e.g. position was hydrated from Data API without signal data)
+      if (existing.edgeAtEntry == null && resolvedEdge != null) existing.edgeAtEntry = resolvedEdge;
+      if (existing.kellyAtEntry == null && resolvedKelly != null) existing.kellyAtEntry = resolvedKelly;
     } else {
       this.positions.set(tokenId, {
         tokenId,
@@ -201,10 +213,13 @@ export class PositionTracker {
         size,
         totalCost: price * size,
         openedAt: Date.now(),
-        edgeAtEntry,
-        kellyAtEntry,
+        edgeAtEntry: resolvedEdge,
+        kellyAtEntry: resolvedKelly,
       });
     }
+
+    // Clear pending signal once consumed into position
+    this.pendingSignals.delete(tokenId);
 
     log.info(`BUY recorded: ${slug} ${size} @ ${price}`);
   }

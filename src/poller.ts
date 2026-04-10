@@ -288,6 +288,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     netEdge: ev,
     kellyFraction: rawKelly,
   });
+  deps.positions.storePendingSignal(tokenId, ev, rawKelly);
 
   log.info(`SIGNAL BUY: ${slug} ${size} @ ${bidPrice.toFixed(4)} edge=${(ev * 100).toFixed(1)}% kelly=${(rawKelly * 100).toFixed(1)}%`);
 
