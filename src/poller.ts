@@ -253,6 +253,10 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   // expectedValue is e.g. 108.5 meaning Polymarket odds are 8.5% better than fair
   // Kelly for decimal odds: f = edge / (decimalOdds - 1)
   const ev = (bet.expectedValue - 100) / 100; // normalise to e.g. 0.085
+  if (ev < config.minEdge) {
+    log.debug(`Edge too low for ${slug}: ev=${(ev * 100).toFixed(2)}% < minEdge=${(config.minEdge * 100).toFixed(2)}%, skipping`);
+    return;
+  }
   const rawKelly = ev / (decimalOdds - 1);
   const adjustedKelly = Math.min(
     rawKelly * config.kellyFraction,
