@@ -44,10 +44,9 @@ export interface ExitDeps {
  * Exit rules:
  *  1. Price dropped ≥ stopLossPct from entry → hard stop (unconditional)
  *  2. Event still in value-bets → hold (thesis intact)
- *  3. Event gone + profit ≥ minEdge → take profit
- *  4. Event gone + loss > stopLossFloor → cut loss
- *  5. Event gone + profit > round-trip fees → lock gain
- *  6. Event gone for N consecutive checks → exit (underwater persistence)
+ *  3. Event gone + loss > dynamic floor (scales with entry price) → cut loss
+ *  4. Event gone + profit > round-trip fees → lock gain
+ *  5. Event gone for N consecutive checks → exit (underwater persistence)
  */
 export async function checkAllExits(deps: ExitDeps): Promise<void> {
   const positions = deps.positions.getAllPositions();
@@ -152,7 +151,11 @@ function checkExit(
 
   // 1. Hard stop-loss — unconditional, fires even while signal is active.
   // Protects against catastrophic moves the Odds API is slow to reflect.
-  const stopLossPrice = position.avgPrice * (1 - config.stopLossPct);
+  // Uses the lower of percentage-based and minimum-drop floors to avoid noise stops on cheap tokens.
+  const stopLossPrice = Math.min(
+    position.avgPrice * (1 - config.stopLossPct),
+    position.avgPrice - config.stopLossMinDrop,
+  );
   if (bestBid <= stopLossPrice) {
     return {
       shouldExit: true,
@@ -166,18 +169,10 @@ function checkExit(
 
   // Edge is gone — evaluate exit conditions
 
-  // 3. Take profit
-  if (profitPerShare >= config.minEdge) {
-    return {
-      shouldExit: true,
-      reason: `take_profit: ${(profitPerShare * 100).toFixed(1)}c/share`,
-      profitPerShare,
-    };
-  }
-
-  // 4. Cut loss — thesis broken, price below entry by stopLossFloor.
-  // Uses a separate threshold from MIN_EDGE so entry and exit are tuned independently.
-  if (profitPerShare < -config.stopLossFloor) {
+  // 3. Cut loss — thesis broken, price below entry by dynamic floor.
+  // Floor scales with entry price so cheap tokens get cut faster and expensive ones get more room.
+  const lossFloor = Math.max(config.stopLossFloorMin, position.avgPrice * config.stopLossFloorPct);
+  if (profitPerShare < -lossFloor) {
     return {
       shouldExit: true,
       reason: `loss_cut: P&L ${(profitPerShare * 100).toFixed(1)}c/share`,
@@ -185,7 +180,7 @@ function checkExit(
     };
   }
 
-  // 5. Lock gain — profit clears round-trip fees AND meets minimum per-share/notional floors.
+  // 4. Lock gain — profit clears round-trip fees AND meets minimum per-share/notional floors.
   //
   // Fee model: fee = C × feeRate × p × (1 - p)
   // where C = size (contracts), feeRate from /fee-rate endpoint, p = price.
@@ -209,7 +204,7 @@ function checkExit(
     };
   }
 
-  // 6. Underwater persistence — edge gone for too many consecutive checks
+  // 5. Underwater persistence — edge gone for too many consecutive checks
   if (consecutiveNoEdgeChecks >= config.maxNegativeEdgeChecks) {
     return {
       shouldExit: true,

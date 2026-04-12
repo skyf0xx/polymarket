@@ -54,11 +54,13 @@ TypeScript bot that buys mispriced markets on Polymarket using value-bet signals
 
 For each position, fetches live bestBid from CLOB REST, then checks if the position's slug is still in `activeValueBetSlugs`:
 
-1. Event still in value-bets → hold (thesis intact)
-2. Edge gone + profit ≥ `MIN_EDGE` → take profit
-3. Edge gone + loss > `MIN_EDGE` → cut loss (thesis broken)
-4. Edge gone + profit > round-trip fees → lock gain
+1. Price dropped ≥ `STOP_LOSS_PCT` from entry → hard stop (unconditional, fires even while signal active)
+2. Event still in value-bets → hold (thesis intact)
+3. Edge gone + loss > `STOP_LOSS_FLOOR` → cut loss (thesis broken)
+4. Edge gone + profit clears round-trip fees AND meets `MIN_LOCK_GAIN_PRICE_PCT` + `MIN_LOCK_GAIN_RETURN_PCT` floors → lock gain
 5. Edge gone for `MAX_NEGATIVE_EDGE_CHECKS` consecutive checks → exit (underwater persistence)
+
+Note: `MIN_EDGE` is an **entry filter only** (checked in `poller.ts` before dispatching a signal). It is not used in exit logic.
 
 ## Source Files (11 files)
 
