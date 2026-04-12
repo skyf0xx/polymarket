@@ -81,6 +81,14 @@ export const config = {
   // Minimum gross profit as a fraction of position cost (avgPrice × size) to trigger lock_gain.
   // e.g. 0.03 = must earn ≥3% of what was deployed. Prevents noise exits on large cheap positions.
   minLockGainReturnPct: envNum("MIN_LOCK_GAIN_RETURN_PCT", 0.03),
+  // Hard stop-loss: exit immediately if bestBid falls below avgPrice × (1 - stopLossPct).
+  // Fires unconditionally — even while the Odds API signal is still active.
+  // e.g. 0.25 = exit if price drops 25% from entry (0.50 entry → exit at ≤0.375).
+  stopLossPct: envNum("STOP_LOSS_PCT", 0.25),
+  // Absolute per-share loss floor for loss_cut (edge-gone path only).
+  // Kept separate from MIN_EDGE so entry filter and exit trigger are tuned independently.
+  // e.g. 0.04 = cut when bestBid is 4c/share below avgPrice after signal disappears.
+  stopLossFloor: envNum("STOP_LOSS_FLOOR", 0.04),
 
   // Operation
   verbose: envBool("VERBOSE", false),
