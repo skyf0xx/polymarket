@@ -71,9 +71,12 @@ export class PositionTracker {
       // Detect positions that disappeared since last hydration — market resolved or manually closed elsewhere
       for (const [tokenId, held] of this.positions) {
         if (!freshTokenIds.has(tokenId)) {
-          // cashPnl = (exitPrice - avgPrice) * size  →  exitPrice = avgPrice + cashPnl/size
-          const cashPnl = (held as Position & { _cashPnl?: number })._cashPnl ?? 0;
-          const exitPrice = Math.round((held.avgPrice + cashPnl / held.size) * 10000) / 10000;
+          const currentValue = (held as Position & { _currentValue?: number })._currentValue;
+          if (currentValue == null) {
+            log.warn(`TRADE_CLOSED skipped for ${held.slug}: no currentValue snapshot available`);
+            continue;
+          }
+          const exitPrice = Math.round((currentValue / held.size) * 10000) / 10000;
           const profitPerShare = exitPrice - held.avgPrice;
           log.record("TRADE_CLOSED", {
             ts: new Date().toISOString(),
@@ -109,7 +112,7 @@ export class PositionTracker {
           continue; // resolved — don't track as open position
         }
 
-        const pos: Position & { _cashPnl?: number } = {
+        const pos: Position & { _currentValue?: number } = {
           tokenId: p.asset,
           slug: p.eventSlug, // use event slug so exit logic matches activeValueBetSlugs
           side,
@@ -118,7 +121,7 @@ export class PositionTracker {
           totalCost: p.initialValue,
           openedAt: Date.now(),
         };
-        pos._cashPnl = p.cashPnl;
+        pos._currentValue = p.currentValue;
         this.positions.set(p.asset, pos);
       }
 
