@@ -14,10 +14,13 @@ import type { TradeSignal, Position } from "./types.js";
 
 const log = createLogger("exits");
 
-async function fetchFeeRate(_client: ClobClient, tokenId: string): Promise<number> {
+async function fetchFeeRate(
+  _client: ClobClient,
+  tokenId: string,
+): Promise<number> {
   try {
     const res = await fetch("https://clob.polymarket.com/fee-rate");
-    const data = await res.json() as { base_fee?: number };
+    const data = (await res.json()) as { base_fee?: number };
     return Number(data.base_fee ?? 0);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -61,7 +64,10 @@ export async function checkAllExits(deps: ExitDeps): Promise<void> {
 
 // -- Per-Token Exit Check -----------------------------------------------------
 
-async function checkExitForToken(position: Position, deps: ExitDeps): Promise<void> {
+async function checkExitForToken(
+  position: Position,
+  deps: ExitDeps,
+): Promise<void> {
   try {
     const { client, orders, activeValueBetSlugs } = deps;
     const tokenId = position.tokenId;
@@ -77,7 +83,13 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
     if (bestBid === null || bestBid < config.minPrice) return;
 
     const consecutiveChecks = noEdgeChecks.get(tokenId) ?? 0;
-    const exitResult = checkExit(position, bestBid, hasActiveEdge, consecutiveChecks, feeRateBps);
+    const exitResult = checkExit(
+      position,
+      bestBid,
+      hasActiveEdge,
+      consecutiveChecks,
+      feeRateBps,
+    );
 
     // Track consecutive checks where value-bet is absent
     if (!hasActiveEdge) {
@@ -88,7 +100,9 @@ async function checkExitForToken(position: Position, deps: ExitDeps): Promise<vo
 
     if (!exitResult.shouldExit) return;
 
-    log.info(`EXIT SIGNAL: ${position.slug} bestBid=${bestBid.toFixed(4)} reason=${exitResult.reason}`);
+    log.info(
+      `EXIT SIGNAL: ${position.slug} bestBid=${bestBid.toFixed(4)} reason=${exitResult.reason}`,
+    );
 
     if (isOnCooldown(tokenId)) {
       log.debug(`Cooldown active for exit on ${tokenId}, skipping`);
@@ -171,7 +185,10 @@ function checkExit(
 
   // 3. Cut loss — thesis broken, price below entry by dynamic floor.
   // Floor scales with entry price so cheap tokens get cut faster and expensive ones get more room.
-  const lossFloor = Math.max(config.stopLossFloorMin, position.avgPrice * config.stopLossFloorPct);
+  const lossFloor = Math.max(
+    config.stopLossFloorMin,
+    position.avgPrice * config.stopLossFloorPct,
+  );
   if (profitPerShare < -lossFloor) {
     return {
       shouldExit: true,
@@ -181,22 +198,25 @@ function checkExit(
   }
 
   // 4. Lock gain — profit clears round-trip fees AND meets minimum per-share/notional floors.
-  //
+  // THIS FEE FORMULA IS CORRECT AND FROM THE DOCS
   // Fee model: fee = C × feeRate × p × (1 - p)
   // where C = size (contracts), feeRate from /fee-rate endpoint, p = price.
   // Round-trip = entry fee + exit fee.
   const feeFactor = feeRateBps / 10000;
-  const entryFee = position.size * feeFactor * position.avgPrice * (1 - position.avgPrice);
+  const entryFee =
+    position.size * feeFactor * position.avgPrice * (1 - position.avgPrice);
   const exitFee = position.size * feeFactor * bestBid * (1 - bestBid);
   const totalFees = entryFee + exitFee;
   const grossProfit = profitPerShare * position.size;
 
   const positionCost = position.avgPrice * position.size;
-  const meetsPerShareFloor = profitPerShare >= position.avgPrice * config.minLockGainPricePct;
-  const meetsNotionalFloor = grossProfit >= positionCost * config.minLockGainReturnPct;
+  const meetsPerShareFloor =
+    profitPerShare >= position.avgPrice * config.minLockGainPricePct;
+  const meetsNotionalFloor =
+    grossProfit >= positionCost * config.minLockGainReturnPct;
   const clearsFees = grossProfit >= totalFees;
 
-  if (meetsPerShareFloor && meetsNotionalFloor && clearsFees) {
+  if (profitPerShare > 0 && meetsPerShareFloor && meetsNotionalFloor && clearsFees) {
     return {
       shouldExit: true,
       reason: `lock_gain: ${(profitPerShare * 100).toFixed(1)}c/share (clears fees)`,
@@ -218,7 +238,10 @@ function checkExit(
 
 // -- REST Price Fetch ---------------------------------------------------------
 
-async function fetchBestBid(client: ClobClient, tokenId: string): Promise<number | null> {
+async function fetchBestBid(
+  client: ClobClient,
+  tokenId: string,
+): Promise<number | null> {
   try {
     const { price } = await client.getPrice(tokenId, "SELL");
     const bid = Number(price);
