@@ -242,6 +242,15 @@ export class PositionTracker {
     const profitPerShare = price - existing.avgPrice;
     const totalProfit = profitPerShare * soldSize;
 
+    // Correct the exit reason if the actual fill price is below entry —
+    // lock_gain was decided on bestBid snapshot but FAK fill can slip below entry.
+    if (
+      exitReason?.startsWith("lock_gain") &&
+      profitPerShare < 0
+    ) {
+      exitReason = `fill_below_entry: ${(profitPerShare * 100).toFixed(1)}c/share (slippage from lock_gain)`;
+    }
+
     existing.size -= soldSize;
     existing.totalCost -= costReduced;
 
