@@ -218,6 +218,12 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     console.log(`[DEBUG processBet] SKIP invalid bidPrice=${bidPrice}`);
     return;
   }
+  if (bidPrice < config.minEntryPrice) {
+    log.debug(
+      `Entry price too low for ${slug}: bidPrice=${bidPrice.toFixed(4)} < minEntryPrice=${config.minEntryPrice}, skipping`,
+    );
+    return;
+  }
 
   // Find the right market and token for this bet
   const match = resolveToken(bet, resolved);
