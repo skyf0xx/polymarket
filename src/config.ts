@@ -72,6 +72,10 @@ export const config = {
   cooldownSeconds: envNum("COOLDOWN_SECONDS", 30),
   maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000),
   maxNegativeEdgeChecks: envNum("MAX_NEGATIVE_EDGE_CHECKS", 5),
+  // How long (ms) to block new BUY signals on a slug after a stop_loss or loss_cut fires.
+  // Prevents re-entering a fast-moving event that already stopped us out.
+  // Default: 60 minutes. Set to 0 to disable.
+  stopLossSlugCooldownMs: envNum("STOP_LOSS_SLUG_COOLDOWN_MS", 3_600_000),
 
   // Exit thresholds
   // Minimum price improvement as a fraction of entry price to trigger lock_gain.

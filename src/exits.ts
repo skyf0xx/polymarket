@@ -5,7 +5,7 @@
 
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import { isOnCooldown, markSignaled } from "./cooldown.js";
+import { isOnCooldown, markSignaled, markStopLoss } from "./cooldown.js";
 import { executeSignal } from "./executor.js";
 import type { ClobClient } from "@polymarket/clob-client";
 import type { PositionTracker } from "./position-tracker.js";
@@ -103,6 +103,14 @@ async function checkExitForToken(
     log.info(
       `EXIT SIGNAL: ${position.slug} bestBid=${bestBid.toFixed(4)} reason=${exitResult.reason}`,
     );
+
+    // Block new BUY signals on this slug after a stop-loss or loss-cut exit
+    if (
+      exitResult.reason?.startsWith("stop_loss") ||
+      exitResult.reason?.startsWith("loss_cut")
+    ) {
+      markStopLoss(position.slug);
+    }
 
     if (isOnCooldown(tokenId)) {
       log.debug(`Cooldown active for exit on ${tokenId}, skipping`);
