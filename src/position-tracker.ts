@@ -2,7 +2,14 @@
 // Tracks open positions (token ID, avg price, size).
 // Hydrates from Polymarket Data API on startup + re-syncs during maintenance.
 // Real-time updates come from the user WebSocket (trade events).
+//
+// Snapshot persistence: signal metadata (edgeAtEntry, kellyAtEntry, openedAt)
+// is not returned by the Data API. We write a positions.json snapshot on every
+// mutation so it survives restarts. Hydration merges: Data API is authoritative
+// for size/avgPrice/redeemable; snapshot is authoritative for metadata.
 
+import { writeFileSync, readFileSync, existsSync, renameSync } from "fs";
+import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import type { Position } from "./types.js";
@@ -10,6 +17,48 @@ import type { Position } from "./types.js";
 const log = createLogger("positions");
 
 const DATA_API_URL = "https://data-api.polymarket.com";
+
+// -- Snapshot -----------------------------------------------------------------
+
+const SNAPSHOT_FILE = join(config.dataDir, "positions.json");
+
+/** Persisted metadata that the Data API doesn't return. */
+interface PositionMeta {
+  edgeAtEntry: number | null;
+  kellyAtEntry: number | null;
+  openedAt: number;
+}
+
+function loadSnapshot(): Map<string, PositionMeta> {
+  if (!existsSync(SNAPSHOT_FILE)) return new Map();
+  try {
+    const raw = readFileSync(SNAPSHOT_FILE, "utf-8");
+    const obj = JSON.parse(raw) as Record<string, PositionMeta>;
+    return new Map(Object.entries(obj));
+  } catch {
+    log.warn("Could not read positions.json snapshot — starting fresh");
+    return new Map();
+  }
+}
+
+function writeSnapshot(positions: Map<string, Position>): void {
+  try {
+    const obj: Record<string, PositionMeta> = {};
+    for (const [tokenId, p] of positions) {
+      obj[tokenId] = {
+        edgeAtEntry: p.edgeAtEntry ?? null,
+        kellyAtEntry: p.kellyAtEntry ?? null,
+        openedAt: p.openedAt,
+      };
+    }
+    const tmp = SNAPSHOT_FILE + ".tmp";
+    writeFileSync(tmp, JSON.stringify(obj, null, 2));
+    renameSync(tmp, SNAPSHOT_FILE); // atomic — crash mid-write never corrupts the live file
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`Failed to write positions snapshot: ${msg}`);
+  }
+}
 
 /** Shape returned by GET /positions */
 interface DataApiPosition {
@@ -64,6 +113,9 @@ export class PositionTracker {
         return;
       }
 
+      // Load persisted metadata before clearing in-memory state
+      const snapshot = loadSnapshot();
+
       const apiPositions: DataApiPosition[] = await res.json();
       const freshTokenIds = new Set(apiPositions.filter(p => p.size > 0).map(p => p.asset));
       this.redeemablePositions.clear();
@@ -97,7 +149,7 @@ export class PositionTracker {
       this.positions.clear();
 
       for (const p of apiPositions) {
-        if (Math.floor(p.size) <= 0) continue;
+        if (p.size <= 0) continue;
 
         // Determine YES/NO side from outcome
         const side: "YES" | "NO" =
@@ -112,22 +164,30 @@ export class PositionTracker {
           continue; // resolved — don't track as open position
         }
 
+        // Restore metadata from snapshot; fall back to safe defaults
+        const meta = snapshot.get(p.asset);
         const pos: Position & { _currentValue?: number } = {
           tokenId: p.asset,
           slug: p.eventSlug, // use event slug so exit logic matches activeValueBetSlugs
           side,
           avgPrice: p.avgPrice,
-          size: Math.floor(p.size), // CLOB only accepts whole integer shares
+          size: p.size,
           totalCost: p.initialValue,
-          openedAt: Date.now(),
+          openedAt: meta?.openedAt ?? Date.now(),
+          edgeAtEntry: meta?.edgeAtEntry ?? undefined,
+          kellyAtEntry: meta?.kellyAtEntry ?? undefined,
         };
         pos._currentValue = p.currentValue;
         this.positions.set(p.asset, pos);
       }
 
+      const restoredMeta = [...this.positions.values()].filter(p => p.edgeAtEntry != null).length;
       log.info(
-        `Hydrated ${this.positions.size} position(s), ${this.redeemablePositions.size} redeemable from Data API`,
+        `Hydrated ${this.positions.size} position(s), ${this.redeemablePositions.size} redeemable from Data API (${restoredMeta} with metadata from snapshot)`,
       );
+
+      // Flush snapshot to reflect current open set (drops stale entries for closed positions)
+      writeSnapshot(this.positions);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       log.error(`Failed to hydrate positions: ${message}`);
@@ -224,6 +284,7 @@ export class PositionTracker {
     // Clear pending signal once consumed into position
     this.pendingSignals.delete(tokenId);
 
+    writeSnapshot(this.positions);
     log.info(`BUY recorded: ${slug} ${size} @ ${price}`);
   }
 
@@ -273,5 +334,7 @@ export class PositionTracker {
       this.positions.delete(tokenId);
       log.info(`Position closed: ${tokenId} (${existing.slug})`);
     }
+
+    writeSnapshot(this.positions);
   }
 }
