@@ -6,7 +6,7 @@
 
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import { isOnCooldown, markSignaled } from "./cooldown.js";
+import { isOnCooldown, markSignaled, isSlugStopLossCooled } from "./cooldown.js";
 import { executeSignal } from "./executor.js";
 import type { ClobClient } from "@polymarket/clob-client";
 import type { OrderTracker } from "./order-tracker.js";
@@ -164,7 +164,9 @@ async function poll(deps: PollerDeps): Promise<void> {
     console.log(`[DEBUG poll] 0 value bets returned`);
     return;
   }
-  console.log(`[DEBUG poll] ${bets.length} value bet(s): ${bets.map(b => `${b.id}(${b.betSide})`).join(", ")}`);
+  console.log(
+    `[DEBUG poll] ${bets.length} value bet(s): ${bets.map((b) => `${b.id}(${b.betSide})`).join(", ")}`,
+  );
   log.debug(`Fetched ${bets.length} value bet(s)`);
 
   // Update active slugs for exit logic
@@ -179,7 +181,9 @@ async function poll(deps: PollerDeps): Promise<void> {
   for (const bet of bets) {
     const mktName = bet.market.name;
     if (mktName !== "ML" && mktName !== "Totals" && mktName !== "Spread") {
-      log.debug(`Skipping unsupported market type ${bet.id} (market=${mktName})`);
+      log.warn(
+        `Skipping unsupported market type ${bet.id} (market=${mktName})`,
+      );
       continue;
     }
     await processBet(deps, bet);
@@ -207,7 +211,9 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     bet.bookmakerOdds[bet.betSide as keyof ValueBetBookmakerOdds] ?? "",
   );
   const bidPrice = 1 / decimalOdds;
-  console.log(`[DEBUG processBet] id=${bet.id} slug=${slug} betSide=${bet.betSide} decimalOdds=${decimalOdds} bidPrice=${bidPrice}`);
+  console.log(
+    `[DEBUG processBet] id=${bet.id} slug=${slug} betSide=${bet.betSide} decimalOdds=${decimalOdds} bidPrice=${bidPrice}`,
+  );
   if (!isFinite(bidPrice) || bidPrice <= 0 || bidPrice >= 1) {
     console.log(`[DEBUG processBet] SKIP invalid bidPrice=${bidPrice}`);
     return;
@@ -216,15 +222,21 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   // Find the right market and token for this bet
   const match = resolveToken(bet, resolved);
   if (!match) {
-    console.log(`[DEBUG processBet] SKIP resolveToken returned null for ${bet.id}`);
+    log.warn(
+      `[DEBUG processBet] SKIP resolveToken returned null for ${bet.id}`,
+    );
     return;
   }
 
   const { tokenId, tokenSide, market } = match;
-  console.log(`[DEBUG processBet] resolved tokenId=${tokenId} tokenSide=${tokenSide} marketActive=${market.active}`);
 
   if (!market.active) {
     log.debug(`Market inactive for ${slug}, skipping`);
+    return;
+  }
+
+  if (isSlugStopLossCooled(slug)) {
+    log.debug(`Stop-loss slug cooldown active for ${slug}, skipping`);
     return;
   }
 
@@ -244,8 +256,11 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   const remainingRoom = Math.min(remainingMarketRoom, remainingEventRoom);
 
   if (remainingRoom < 1) {
-    const reason = remainingEventRoom < 1 ? "event_cap_reached" : "position_cap_reached";
-    log.debug(`${reason} for ${slug} (existing=$${existingPosition.toFixed(2)} market cap=$${maxPosition.toFixed(2)}, event=$${existingEventExposure.toFixed(2)} event cap=$${maxEvent.toFixed(2)})`);
+    const reason =
+      remainingEventRoom < 1 ? "event_cap_reached" : "position_cap_reached";
+    log.debug(
+      `${reason} for ${slug} (existing=$${existingPosition.toFixed(2)} market cap=$${maxPosition.toFixed(2)}, event=$${existingEventExposure.toFixed(2)} event cap=$${maxEvent.toFixed(2)})`,
+    );
     return;
   }
 
@@ -254,7 +269,9 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   // Kelly for decimal odds: f = edge / (decimalOdds - 1)
   const ev = (bet.expectedValue - 100) / 100; // normalise to e.g. 0.085
   if (ev < config.minEdge) {
-    log.debug(`Edge too low for ${slug}: ev=${(ev * 100).toFixed(2)}% < minEdge=${(config.minEdge * 100).toFixed(2)}%, skipping`);
+    log.debug(
+      `Edge too low for ${slug}: ev=${(ev * 100).toFixed(2)}% < minEdge=${(config.minEdge * 100).toFixed(2)}%, skipping`,
+    );
     return;
   }
   const rawKelly = ev / (decimalOdds - 1);
@@ -266,8 +283,14 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   const minSize = market.orderMinSize;
   // Also enforce $1 minimum notional (CLOB rejects marketable BUY < $1)
   const minSizeForNotional = Math.ceil(1 / bidPrice);
-  const size = Math.max(Math.round(suggestedUsdc / bidPrice), minSize, minSizeForNotional);
-  console.log(`[DEBUG processBet] bankroll=${bankroll} ev=${ev} rawKelly=${rawKelly.toFixed(4)} adjustedKelly=${adjustedKelly.toFixed(4)} suggestedUsdc=${suggestedUsdc.toFixed(2)} size=${size} minSize=${minSize} remainingRoom=${remainingRoom.toFixed(2)}`);
+  const size = Math.max(
+    Math.round(suggestedUsdc / bidPrice),
+    minSize,
+    minSizeForNotional,
+  );
+  console.log(
+    `[DEBUG processBet] bankroll=${bankroll} ev=${ev} rawKelly=${rawKelly.toFixed(4)} adjustedKelly=${adjustedKelly.toFixed(4)} suggestedUsdc=${suggestedUsdc.toFixed(2)} size=${size} minSize=${minSize} remainingRoom=${remainingRoom.toFixed(2)}`,
+  );
 
   const signal: TradeSignal = {
     tokenId,
@@ -294,7 +317,9 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   });
   deps.positions.storePendingSignal(tokenId, ev, rawKelly);
 
-  log.info(`SIGNAL BUY: ${slug} ${size} @ ${bidPrice.toFixed(4)} edge=${(ev * 100).toFixed(1)}% kelly=${(rawKelly * 100).toFixed(1)}%`);
+  log.info(
+    `SIGNAL BUY: ${slug} ${size} @ ${bidPrice.toFixed(4)} edge=${(ev * 100).toFixed(1)}% kelly=${(rawKelly * 100).toFixed(1)}%`,
+  );
 
   if (config.dryRun) {
     log.info(
@@ -422,7 +447,8 @@ function resolveLineMarket(
     // Totals: betSide "home" = Over (YES), "away" = Under (NO)
     // Spreads: betSide "home" = home covers (YES), "away" = away covers (NO)
     const tokenSide: "YES" | "NO" = side === "home" ? "YES" : "NO";
-    const tokenId = tokenSide === "YES" ? market.tokenIds.yes : market.tokenIds.no;
+    const tokenId =
+      tokenSide === "YES" ? market.tokenIds.yes : market.tokenIds.no;
 
     return { tokenId, tokenSide, market };
   }
@@ -443,11 +469,16 @@ function resolveMoneyline(
   // Draw bets: match the market whose groupItemTitle starts with "Draw"
   if (side === "draw") {
     for (const market of resolved.markets) {
-      if (market.groupItemTitle && normalize(market.groupItemTitle).startsWith("draw")) {
+      if (
+        market.groupItemTitle &&
+        normalize(market.groupItemTitle).startsWith("draw")
+      ) {
         return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
       }
     }
-    log.warn(`Could not resolve draw market for bet ${bet.id} in slug=${resolved.slug}`);
+    log.warn(
+      `Could not resolve draw market for bet ${bet.id} in slug=${resolved.slug}`,
+    );
     return null;
   }
 
@@ -457,7 +488,8 @@ function resolveMoneyline(
 
   // Only consider moneyline markets to avoid matching spread/totals markets
   for (const market of resolved.markets) {
-    if (market.sportsMarketType && market.sportsMarketType !== "moneyline") continue;
+    if (market.sportsMarketType && market.sportsMarketType !== "moneyline")
+      continue;
 
     // negRisk events: team name is in groupItemTitle, outcomes are just Yes/No
     if (market.groupItemTitle) {
@@ -494,7 +526,29 @@ function normalize(s: string): string {
 }
 
 /** Common short tokens that appear in team prefixes/suffixes but carry no identity. */
-const NOISE_WORDS = new Set(["fc", "ac", "sc", "cf", "afc", "fk", "sk", "bk", "if", "de", "e", "la", "le", "el", "al", "von", "van", "du", "da", "do", "dos"]);
+const NOISE_WORDS = new Set([
+  "fc",
+  "ac",
+  "sc",
+  "cf",
+  "afc",
+  "fk",
+  "sk",
+  "bk",
+  "if",
+  "de",
+  "e",
+  "la",
+  "le",
+  "el",
+  "al",
+  "von",
+  "van",
+  "du",
+  "da",
+  "do",
+  "dos",
+]);
 
 /** Extract meaningful words from a team name (normalized, noise-filtered). */
 function extractWords(name: string): string[] {
