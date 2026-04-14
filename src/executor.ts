@@ -66,6 +66,7 @@ export async function executeSignal(
   orders?: OrderTracker,
 ): Promise<boolean> {
   const tag = `[${signal.side} ${signal.slug} @ ${signal.price.toFixed(4)}]`;
+  let orderPrice: number = 0;
 
   try {
     const isBuy = signal.side === "BUY";
@@ -78,13 +79,12 @@ export async function executeSignal(
       client.getPrice(signal.tokenId, priceSide),
     ]);
 
-    let orderPrice: number;
     if (isBuy) {
       const bestAsk = Number(bookPrice);
       const tick = Number(tickSize);
       orderPrice = Math.round(signal.price / tick) * tick; //Math.min(signal.price, bestAsk - tick);
     } else {
-      orderPrice = Number(bookPrice);
+      orderPrice = Number(tickSize); // Just sell into the market
     }
 
     const size = signal.size;
@@ -168,7 +168,10 @@ export async function executeSignal(
       );
       return false;
     }
-    log.error(`Error executing ${tag}: ${message}`);
+    log.error(`Error executing ${tag}: ${message}`, {
+      tokenID: signal.tokenId,
+      price: orderPrice,
+    });
     return false;
   }
 }
