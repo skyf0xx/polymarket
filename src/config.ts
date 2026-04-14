@@ -63,6 +63,9 @@ export const config = {
   // Edge & Sizing
   minEdge: envNum("MIN_EDGE", 0.02),
   minPrice: envNum("MIN_PRICE", 0.1),
+  // Minimum signal price for new BUY entries. Longshots below this threshold have
+  // wide spreads and fee drag that consumes edge. Default: 0.15 (15c).
+  minEntryPrice: envNum("MIN_ENTRY_PRICE", 0.15),
   kellyFraction: envNum("KELLY_FRACTION", 0.25),
   maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
   maxPositionPct: envNum("MAX_POSITION_PCT", 0.1),
