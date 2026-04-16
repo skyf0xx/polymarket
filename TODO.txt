@@ -1,3 +1,0 @@
-Get API keys for .env
-Start testing in demo mode
-Go live
