@@ -33,15 +33,6 @@ function envBool(key: string, fallback: boolean): boolean {
   return raw === "true" || raw === "1";
 }
 
-function envList(key: string, fallback: string[] = []): string[] {
-  const raw = process.env[key];
-  if (!raw) return fallback;
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 // -- Validated Config Object --------------------------------------------------
 
 export const config = {
@@ -53,7 +44,6 @@ export const config = {
   // Odds API
   oddsApiKey: env("ODDS_API_KEY"),
   oddsApiRestUrl: env("ODDS_API_REST_URL", "https://api.odds-api.io"),
-  oddsApiSports: envList("ODDS_API_SPORTS", []),
 
   // Polymarket
   clobApiUrl: "https://clob.polymarket.com",
@@ -61,20 +51,20 @@ export const config = {
   userWsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/user",
 
   // Edge & Sizing
-  minEdge: envNum("MIN_EDGE", 0.02),
+  minEdge: envNum("MIN_EDGE", 0.06),
   minPrice: envNum("MIN_PRICE", 0.1),
   // Minimum signal price for new BUY entries. Longshots below this threshold have
   // wide spreads and fee drag that consumes edge. Default: 0.15 (15c).
   minEntryPrice: envNum("MIN_ENTRY_PRICE", 0.15),
-  kellyFraction: envNum("KELLY_FRACTION", 0.25),
+  kellyFraction: envNum("KELLY_FRACTION", 0.5),
   maxKellyPct: envNum("MAX_KELLY_PCT", 0.02),
   maxPositionPct: envNum("MAX_POSITION_PCT", 0.1),
-  maxEventPct: envNum("MAX_EVENT_PCT", 0.15),
+  maxEventPct: envNum("MAX_EVENT_PCT", 0.1),
 
   // Timing
   cooldownSeconds: envNum("COOLDOWN_SECONDS", 30),
   maintenanceIntervalMs: envNum("MAINTENANCE_INTERVAL_MS", 300_000),
-  maxNegativeEdgeChecks: envNum("MAX_NEGATIVE_EDGE_CHECKS", 5),
+  maxNegativeEdgeChecks: envNum("MAX_NEGATIVE_EDGE_CHECKS", 3),
   // How long (ms) to block new BUY signals on a slug after a stop_loss or loss_cut fires.
   // Prevents re-entering a fast-moving event that already stopped us out.
   // Default: 60 minutes. Set to 0 to disable.
@@ -103,7 +93,7 @@ export const config = {
 
   // Operation
   verbose: envBool("VERBOSE", false),
-  dryRun: envBool("DRY_RUN", true),
+  dryRun: envBool("DRY_RUN", false),
   dataDir: env("DATA_DIR", "./data"),
   credsFile: env("CREDS_FILE", "./api_creds.json"),
 
