@@ -55,6 +55,15 @@ export async function redeemResolvedPositions(
     }).then((receipt: ethers.ContractReceipt) => {
       log.info(`Redeem confirmed: block=${receipt.blockNumber} conditionId=${conditionId}`);
     }).catch((err: unknown) => {
+      if (
+        err instanceof Error &&
+        (err as any).code === "TRANSACTION_REPLACED" &&
+        (err as any).receipt?.status === 1
+      ) {
+        const e = err as any;
+        log.info(`Redeem replaced+confirmed: block=${e.receipt.blockNumber} hash=${e.replacement.hash} conditionId=${conditionId}`);
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       log.error(`Redeem failed for conditionId=${conditionId}: ${message}`);
     });
