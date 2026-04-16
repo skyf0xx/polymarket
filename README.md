@@ -7,22 +7,9 @@ Detects mispriced sports markets on Polymarket using value-bet signals from The 
 ```bash
 npm install
 cp .env.example .env
-# Edit .env — see required vars below
 ```
 
-## Required env vars
-
-```env
-PRIVATE_KEY=0x...
-FUNDER_ADDRESS=0x...          # Proxy/Safe wallet address
-SIGNATURE_TYPE=2              # 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE
-
-ODDS_API_KEY=...
-ANTHROPIC_API_KEY=...         # Used for market matching (Haiku)
-ODDS_API_SPORTS=basketball,football,american-football,tennis,baseball
-
-DRY_RUN=true                  # Set false to enable live execution
-```
+Update src/config.ts
 
 See `.env.example` for full list with defaults.
 
