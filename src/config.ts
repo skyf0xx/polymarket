@@ -51,7 +51,7 @@ export const config = {
   userWsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/user",
 
   // Edge & Sizing
-  minEdge: envNum("MIN_EDGE", 0.06),
+  minEdge: envNum("MIN_EDGE", 0.08),
   minPrice: envNum("MIN_PRICE", 0.1),
   // Minimum signal price for new BUY entries. Longshots below this threshold have
   // wide spreads and fee drag that consumes edge. Default: 0.15 (15c).
