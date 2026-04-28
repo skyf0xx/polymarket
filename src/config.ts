@@ -98,7 +98,10 @@ export const config = {
   credsFile: env("CREDS_FILE", "./api_creds.json"),
 
   // Value Bet Poller
-  valueBetPollIntervalMs: envNum("VALUE_BET_POLL_INTERVAL_MS", 30_000),
+  valueBetPollIntervalMs: envNum("VALUE_BET_POLL_INTERVAL_MS", 5_000),
+  // Maximum age of a value-bet signal (ms). Signals older than this are skipped —
+  // Polymarket has had time to correct the price. Default: 5 minutes.
+  maxSignalAgeMs: envNum("MAX_SIGNAL_AGE_MS", 5 * 60 * 1_000),
 
   // Polygon RPC
   polygonRpc: env("POLYGON_RPC", "https://polygon-rpc.com"),
