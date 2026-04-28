@@ -6,6 +6,7 @@
 import { ClobClient, OrderType, Side } from "@polymarket/clob-client";
 import type { TickSize } from "@polymarket/clob-client";
 import { createLogger } from "./logger.js";
+import { markBuyFailed, markBuySucceeded } from "./cooldown.js";
 import type { OrderTracker } from "./order-tracker.js";
 import type { TradeSignal } from "./types.js";
 
@@ -126,6 +127,7 @@ export async function executeSignal(
 
       if (orders && resp.orderID && isBuy) {
         orders.trackOrder(resp.orderID, signal.tokenId, orderPrice, size);
+        markBuySucceeded(signal.tokenId);
       }
 
       return true;
@@ -139,6 +141,11 @@ export async function executeSignal(
       if (!isBuy && resp?.status === 400 && !isBalanceError) {
         log.warn(`SELL FAK no fill ${tag}: ${errorMsg}`);
         return false;
+      }
+
+      // Accumulate failure count on BUY 400s — backs off after MAX_BUY_FAILURES
+      if (isBuy && resp?.status === 400) {
+        markBuyFailed(signal.tokenId);
       }
 
       log.recordError(`Order failed`, {
