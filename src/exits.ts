@@ -29,8 +29,9 @@ async function fetchFeeRate(
   }
 }
 
-// Consecutive "no value-bet" check counter per token
+// Consecutive "no value-bet" check counter per token — persisted across restarts via snapshot.
 const noEdgeChecks = new Map<string, number>();
+let noEdgeChecksLoaded = false;
 
 // -- Public API ---------------------------------------------------------------
 
@@ -55,11 +56,22 @@ export async function checkAllExits(deps: ExitDeps): Promise<void> {
   const positions = deps.positions.getAllPositions();
   if (positions.length === 0) return;
 
+  // Load persisted counters once on first sweep after startup
+  if (!noEdgeChecksLoaded) {
+    for (const [tokenId, count] of deps.positions.loadNoEdgeChecks()) {
+      noEdgeChecks.set(tokenId, count);
+    }
+    noEdgeChecksLoaded = true;
+  }
+
   log.debug(`Exit sweep: checking ${positions.length} open position(s)`);
 
   for (const position of positions) {
     await checkExitForToken(position, deps);
   }
+
+  // Persist counters so restarts don't reset zombie detection progress
+  deps.positions.flushNoEdgeChecks(noEdgeChecks);
 }
 
 // -- Per-Token Exit Check -----------------------------------------------------
@@ -80,12 +92,16 @@ async function checkExitForToken(
       fetchBestBid(client, tokenId),
       fetchFeeRate(client, tokenId),
     ]);
-    if (bestBid === null || bestBid < config.minPrice) return;
+
+    // Token is effectively worthless (resolved NO, expired, or illiquid) — force exit at whatever bid exists.
+    // Do NOT bail: skipping these creates permanent zombies since they'll never recover above minPrice.
+    if (bestBid === null) return;
+    const effectiveBid = bestBid < config.minPrice ? config.minPrice : bestBid;
 
     const consecutiveChecks = noEdgeChecks.get(tokenId) ?? 0;
     const exitResult = checkExit(
       position,
-      bestBid,
+      effectiveBid,
       hasActiveEdge,
       consecutiveChecks,
       feeRateBps,
@@ -101,7 +117,7 @@ async function checkExitForToken(
     if (!exitResult.shouldExit) return;
 
     log.info(
-      `EXIT SIGNAL: ${position.slug} bestBid=${bestBid.toFixed(4)} reason=${exitResult.reason}`,
+      `EXIT SIGNAL: ${position.slug} bestBid=${effectiveBid.toFixed(4)} reason=${exitResult.reason}`,
     );
 
     // Block new BUY signals on this slug after a stop-loss or loss-cut exit
@@ -128,7 +144,7 @@ async function checkExitForToken(
       slug: position.slug,
       side: "SELL",
       tokenSide: position.side,
-      price: bestBid,
+      price: effectiveBid,
       size: sellSize,
       edge: 0,
       kellyFraction: 0,
@@ -140,7 +156,7 @@ async function checkExitForToken(
 
     if (config.dryRun) {
       log.info(
-        `[DRY RUN] Would SELL ${sellSize} shares of ${position.slug} @ ${bestBid.toFixed(4)} (${exitResult.reason})`,
+        `[DRY RUN] Would SELL ${sellSize} shares of ${position.slug} @ ${effectiveBid.toFixed(4)} (${exitResult.reason})`,
       );
       return;
     }
