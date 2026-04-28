@@ -195,7 +195,28 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     return;
   }
 
-  // Resolve event from Gamma (cached)
+  // Skip stale signals — if the Odds API last computed edge for this bet more
+  // than maxSignalAgeMs ago, Polymarket has had time to correct the price.
+  const updatedAt = bet.expectedValueUpdatedAt
+    ? new Date(bet.expectedValueUpdatedAt).getTime()
+    : null;
+  const signalAgeMs = updatedAt != null ? Date.now() - updatedAt : null;
+  if (signalAgeMs != null && signalAgeMs > config.maxSignalAgeMs) {
+    log.debug(
+      `Stale signal ${bet.id} (age=${Math.round(signalAgeMs / 1000)}s > ${config.maxSignalAgeMs / 1000}s), skipping`,
+    );
+    return;
+  }
+
+  // Skip draw bets — draw markets on Polymarket have thin liquidity and wide
+  // spreads that consistently absorb the edge before fills complete.
+  if (bet.betSide.toLowerCase() === "draw") {
+    log.debug(`Skipping draw bet ${bet.id} for ${slug}`);
+    return;
+  }
+
+  // Resolve event from Gamma (cached) — after staleness/draw checks to avoid
+  // fetching Gamma for signals we'd skip anyway.
   let resolved = slugCache.get(slug);
   if (!resolved) {
     const fetched = await fetchAndCacheEvent(slug);
