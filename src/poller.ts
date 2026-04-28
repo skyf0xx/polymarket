@@ -161,12 +161,8 @@ async function poll(deps: PollerDeps): Promise<void> {
 
   if (bets.length === 0) {
     _activeValueBetSlugs = new Set();
-    console.log(`[DEBUG poll] 0 value bets returned`);
     return;
   }
-  console.log(
-    `[DEBUG poll] ${bets.length} value bet(s): ${bets.map((b) => `${b.id}(${b.betSide})`).join(", ")}`,
-  );
   log.debug(`Fetched ${bets.length} value bet(s)`);
 
   // Update active slugs for exit logic
@@ -211,11 +207,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     bet.bookmakerOdds[bet.betSide as keyof ValueBetBookmakerOdds] ?? "",
   );
   const bidPrice = 1 / decimalOdds;
-  console.log(
-    `[DEBUG processBet] id=${bet.id} slug=${slug} betSide=${bet.betSide} decimalOdds=${decimalOdds} bidPrice=${bidPrice}`,
-  );
   if (!isFinite(bidPrice) || bidPrice <= 0 || bidPrice >= 1) {
-    console.log(`[DEBUG processBet] SKIP invalid bidPrice=${bidPrice}`);
     return;
   }
   if (bidPrice < config.minEntryPrice) {
@@ -228,9 +220,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   // Find the right market and token for this bet
   const match = resolveToken(bet, resolved);
   if (!match) {
-    log.warn(
-      `[DEBUG processBet] SKIP resolveToken returned null for ${bet.id}`,
-    );
+    log.warn(`Could not resolve token for bet ${bet.id} in slug=${slug}`);
     return;
   }
 
@@ -294,10 +284,6 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     minSize,
     minSizeForNotional,
   );
-  console.log(
-    `[DEBUG processBet] bankroll=${bankroll} ev=${ev} rawKelly=${rawKelly.toFixed(4)} adjustedKelly=${adjustedKelly.toFixed(4)} suggestedUsdc=${suggestedUsdc.toFixed(2)} size=${size} minSize=${minSize} remainingRoom=${remainingRoom.toFixed(2)}`,
-  );
-
   const signal: TradeSignal = {
     tokenId,
     slug,
