@@ -27,6 +27,7 @@ interface PositionMeta {
   edgeAtEntry: number | null;
   kellyAtEntry: number | null;
   openedAt: number;
+  noEdgeChecks?: number;
 }
 
 function loadSnapshot(): Map<string, PositionMeta> {
@@ -41,7 +42,7 @@ function loadSnapshot(): Map<string, PositionMeta> {
   }
 }
 
-function writeSnapshot(positions: Map<string, Position>): void {
+function writeSnapshot(positions: Map<string, Position>, noEdgeChecks?: Map<string, number>): void {
   try {
     const obj: Record<string, PositionMeta> = {};
     for (const [tokenId, p] of positions) {
@@ -49,6 +50,7 @@ function writeSnapshot(positions: Map<string, Position>): void {
         edgeAtEntry: p.edgeAtEntry ?? null,
         kellyAtEntry: p.kellyAtEntry ?? null,
         openedAt: p.openedAt,
+        noEdgeChecks: noEdgeChecks?.get(tokenId),
       };
     }
     const tmp = SNAPSHOT_FILE + ".tmp";
@@ -234,6 +236,23 @@ export class PositionTracker {
 
   get size(): number {
     return this.positions.size;
+  }
+
+  /** Persist noEdgeChecks counters into the snapshot so they survive restarts. */
+  flushNoEdgeChecks(noEdgeChecks: Map<string, number>): void {
+    writeSnapshot(this.positions, noEdgeChecks);
+  }
+
+  /** Load persisted noEdgeChecks counters from snapshot (called once by exits on startup). */
+  loadNoEdgeChecks(): Map<string, number> {
+    const snapshot = loadSnapshot();
+    const result = new Map<string, number>();
+    for (const [tokenId, meta] of snapshot) {
+      if (meta.noEdgeChecks != null && meta.noEdgeChecks > 0) {
+        result.set(tokenId, meta.noEdgeChecks);
+      }
+    }
+    return result;
   }
 
   // ── Record Trades ───────────────────────────────────────────────
