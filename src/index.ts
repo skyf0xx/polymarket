@@ -2,7 +2,7 @@
 // Entry point: init wallet, hydrate positions, start poller + maintenance.
 
 import { ethers } from "ethers";
-import { ClobClient, ApiKeyCreds } from "@polymarket/clob-client";
+import { ClobClient, ApiKeyCreds } from "@polymarket/clob-client-v2";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import { PositionTracker } from "./position-tracker.js";
@@ -20,18 +20,24 @@ const CHAIN_ID = 137;
 
 // -- CLOB Client Setup --------------------------------------------------------
 
-function makeClobClient(signer: ethers.Wallet, creds?: ApiKeyCreds): ClobClient {
-  return new ClobClient(
-    config.clobApiUrl,
-    CHAIN_ID,
+function makeClobClient(
+  signer: ethers.Wallet,
+  creds?: ApiKeyCreds,
+): ClobClient {
+  return new ClobClient({
+    host: config.clobApiUrl,
+    chain: CHAIN_ID,
     signer,
     creds,
-    config.signatureType,
-    config.funderAddress,
-  );
+    signatureType: config.signatureType,
+    funderAddress: config.funderAddress,
+  });
 }
 
-async function initClobClient(): Promise<{ client: ClobClient; signer: ethers.Wallet }> {
+async function initClobClient(): Promise<{
+  client: ClobClient;
+  signer: ethers.Wallet;
+}> {
   const provider = new ethers.providers.JsonRpcProvider(config.polygonRpc, 137);
   const signer = new ethers.Wallet(config.privateKey, provider);
 
@@ -40,7 +46,9 @@ async function initClobClient(): Promise<{ client: ClobClient; signer: ethers.Wa
 
   if (existsSync(config.credsFile)) {
     try {
-      const creds = JSON.parse(readFileSync(config.credsFile, "utf-8")) as ApiKeyCreds;
+      const creds = JSON.parse(
+        readFileSync(config.credsFile, "utf-8"),
+      ) as ApiKeyCreds;
       log.info(`Loaded API credentials from ${config.credsFile}`);
       return { client: makeClobClient(signer, creds), signer };
     } catch {
@@ -63,7 +71,9 @@ async function main(): Promise<void> {
   log.info("==============================================");
   log.info("  Value-Bet Bot");
   log.info(`  DRY_RUN=${config.dryRun}`);
-  log.info(`  Kelly: ${config.kellyFraction}  Cooldown: ${config.cooldownSeconds}s`);
+  log.info(
+    `  Kelly: ${config.kellyFraction}  Cooldown: ${config.cooldownSeconds}s`,
+  );
   log.info("==============================================");
 
   // 1. Init CLOB client
@@ -108,7 +118,9 @@ async function main(): Promise<void> {
     positions,
     orders,
     getBankroll: () => bankroll!,
-    setBankroll: (b) => { bankroll = b; },
+    setBankroll: (b) => {
+      bankroll = b;
+    },
   });
 
   // 8. Health logging

@@ -8,7 +8,7 @@ import { config } from "./config.js";
 import { createLogger } from "./logger.js";
 import { isOnCooldown, markSignaled, isSlugStopLossCooled } from "./cooldown.js";
 import { executeSignal } from "./executor.js";
-import type { ClobClient } from "@polymarket/clob-client";
+import type { ClobClient } from "@polymarket/clob-client-v2";
 import type { OrderTracker } from "./order-tracker.js";
 import type { PositionTracker } from "./position-tracker.js";
 import type { TradeSignal } from "./types.js";

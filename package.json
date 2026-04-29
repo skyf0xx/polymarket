@@ -10,7 +10,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@polymarket/clob-client": "^5.8.1",
+    "@polymarket/clob-client-v2": "^1.0.2",
     "dotenv": "^17.3.1",
     "ethers": "^5.8.0",
     "ws": "^8.19.0"

@@ -3,8 +3,8 @@
 // BUY: GTD limit order (5-min expiry) at sharp signal price
 // SELL: FAK market order (fill or cancel)
 
-import { ClobClient, OrderType, Side } from "@polymarket/clob-client";
-import type { TickSize } from "@polymarket/clob-client";
+import { ClobClient, OrderType, Side } from "@polymarket/clob-client-v2";
+import type { TickSize } from "@polymarket/clob-client-v2";
 import { createLogger } from "./logger.js";
 import { markBuyFailed, markBuySucceeded } from "./cooldown.js";
 import type { OrderTracker } from "./order-tracker.js";
@@ -157,7 +157,7 @@ export async function executeSignal(
         edge: signal.edge,
         reason: signal.reason,
         success: false,
-        error: resp?.status ?? JSON.stringify(resp),
+        error: JSON.stringify(resp),
       });
 
       return false;
