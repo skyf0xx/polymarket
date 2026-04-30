@@ -81,9 +81,14 @@ export async function executeSignal(
     ]);
 
     if (isBuy) {
+      // Post inside the spread as a maker: cap at signal price, but never lift the offer.
+      // signal.price is the implied prob from the sharp's posted odds (= the ask). If we
+      // place AT that price we cross and pay the ask; placing one tick below the ask
+      // captures any positive-spread fills without overpaying.
       const bestAsk = Number(bookPrice);
       const tick = Number(tickSize);
-      orderPrice = Math.round(signal.price / tick) * tick; //Math.min(signal.price, bestAsk - tick);
+      const target = Math.min(signal.price, bestAsk - tick);
+      orderPrice = Math.round(target / tick) * tick;
     } else {
       orderPrice = Number(tickSize); // Just sell into the market
     }
