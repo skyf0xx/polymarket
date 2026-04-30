@@ -9,6 +9,7 @@ import type { LogLevel, LogEntry } from "./types.js";
 
 const LOG_FILE = join(config.dataDir, "trades.jsonl");
 const ERROR_LOG_FILE = join(config.dataDir, "errors.jsonl");
+const UNKNOWN_MARKETS_FILE = join(config.dataDir, "unknown-markets.jsonl");
 
 // Ensure data directory exists
 if (!existsSync(config.dataDir)) {
@@ -66,6 +67,15 @@ function log(
   // Non-error records always persist to trades.jsonl.
   if (persist && level !== "error") {
     writeToFile(entry);
+  }
+}
+
+export function logUnknownMarket(marketName: string, betId: string): void {
+  try {
+    const entry = { ts: new Date().toISOString(), marketName, betId };
+    appendFileSync(UNKNOWN_MARKETS_FILE, JSON.stringify(entry) + "\n");
+  } catch {
+    // Swallow
   }
 }
 
