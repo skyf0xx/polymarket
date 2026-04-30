@@ -28,6 +28,7 @@ interface PositionMeta {
   kellyAtEntry: number | null;
   openedAt: number;
   noEdgeChecks?: number;
+  marketType?: "ML" | "Totals" | "Spread";
 }
 
 function loadSnapshot(): Map<string, PositionMeta> {
@@ -51,6 +52,7 @@ function writeSnapshot(positions: Map<string, Position>, noEdgeChecks?: Map<stri
         kellyAtEntry: p.kellyAtEntry ?? null,
         openedAt: p.openedAt,
         noEdgeChecks: noEdgeChecks?.get(tokenId),
+        marketType: p.marketType,
       };
     }
     const tmp = SNAPSHOT_FILE + ".tmp";
@@ -91,11 +93,11 @@ export interface RedeemablePosition {
 export class PositionTracker {
   private positions = new Map<string, Position>();
   private redeemablePositions = new Map<string, RedeemablePosition>(); // keyed by tokenId
-  private pendingSignals = new Map<string, { edgeAtEntry: number; kellyAtEntry: number }>(); // keyed by tokenId
+  private pendingSignals = new Map<string, { edgeAtEntry: number; kellyAtEntry: number; marketType?: "ML" | "Totals" | "Spread" }>(); // keyed by tokenId
 
   /** Store signal metadata before order execution so it survives reconnects and catch-up replays. */
-  storePendingSignal(tokenId: string, edgeAtEntry: number, kellyAtEntry: number): void {
-    this.pendingSignals.set(tokenId, { edgeAtEntry, kellyAtEntry });
+  storePendingSignal(tokenId: string, edgeAtEntry: number, kellyAtEntry: number, marketType?: "ML" | "Totals" | "Spread"): void {
+    this.pendingSignals.set(tokenId, { edgeAtEntry, kellyAtEntry, marketType });
   }
 
   // ── Public API ──────────────────────────────────────────────────
@@ -136,6 +138,7 @@ export class PositionTracker {
             ts: new Date().toISOString(),
             slug: held.slug,
             side: held.side,
+            marketType: held.marketType ?? null,
             entryPrice: Math.round(held.avgPrice * 10000) / 10000,
             exitPrice,
             size: held.size,
@@ -178,6 +181,7 @@ export class PositionTracker {
           openedAt: meta?.openedAt ?? Date.now(),
           edgeAtEntry: meta?.edgeAtEntry ?? undefined,
           kellyAtEntry: meta?.kellyAtEntry ?? undefined,
+          marketType: meta?.marketType,
         };
         pos._currentValue = p.currentValue;
         this.positions.set(p.asset, pos);
@@ -273,6 +277,7 @@ export class PositionTracker {
     const pending = this.pendingSignals.get(tokenId);
     const resolvedEdge = pending?.edgeAtEntry ?? edgeAtEntry;
     const resolvedKelly = pending?.kellyAtEntry ?? kellyAtEntry;
+    const resolvedMarketType = pending?.marketType;
 
     if (existing) {
       // Weighted average cost basis
@@ -286,6 +291,7 @@ export class PositionTracker {
       // Backfill if not yet set (e.g. position was hydrated from Data API without signal data)
       if (existing.edgeAtEntry == null && resolvedEdge != null) existing.edgeAtEntry = resolvedEdge;
       if (existing.kellyAtEntry == null && resolvedKelly != null) existing.kellyAtEntry = resolvedKelly;
+      if (existing.marketType == null && resolvedMarketType != null) existing.marketType = resolvedMarketType;
     } else {
       this.positions.set(tokenId, {
         tokenId,
@@ -297,6 +303,7 @@ export class PositionTracker {
         openedAt: Date.now(),
         edgeAtEntry: resolvedEdge,
         kellyAtEntry: resolvedKelly,
+        marketType: resolvedMarketType,
       });
     }
 
@@ -341,6 +348,7 @@ export class PositionTracker {
         ts: new Date().toISOString(),
         slug: existing.slug,
         side: existing.side,
+        marketType: existing.marketType ?? null,
         entryPrice: Math.round(existing.avgPrice * 10000) / 10000,
         exitPrice: Math.round(price * 10000) / 10000,
         size: soldSize,

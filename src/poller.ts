@@ -5,7 +5,7 @@
 // Exposes activeValueBetSlugs for exit logic to check thesis status.
 
 import { config } from "./config.js";
-import { createLogger } from "./logger.js";
+import { createLogger, logUnknownMarket } from "./logger.js";
 import { isOnCooldown, markSignaled, isSlugStopLossCooled } from "./cooldown.js";
 import { executeSignal } from "./executor.js";
 import type { ClobClient } from "@polymarket/clob-client-v2";
@@ -100,6 +100,9 @@ interface ParsedMarket {
 
 const slugCache = new Map<string, ResolvedMarket>();
 
+// Market type names we've already logged as unsupported — log once per process.
+const unknownMarketTypesLogged = new Set<string>();
+
 // Token→slug+side map (for UserStream to resolve fills without matcher)
 const tokenInfoMap = new Map<string, { slug: string; side: "YES" | "NO" }>();
 
@@ -177,9 +180,10 @@ async function poll(deps: PollerDeps): Promise<void> {
   for (const bet of bets) {
     const mktName = bet.market.name;
     if (mktName !== "ML" && mktName !== "Totals" && mktName !== "Spread") {
-      log.warn(
-        `Skipping unsupported market type ${bet.id} (market=${mktName})`,
-      );
+      if (!unknownMarketTypesLogged.has(mktName)) {
+        unknownMarketTypesLogged.add(mktName);
+        logUnknownMarket(mktName, bet.id);
+      }
       continue;
     }
     await processBet(deps, bet);
@@ -315,6 +319,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     edge: ev,
     kellyFraction: rawKelly,
     reason: "value_bet_confirmed",
+    marketType: bet.market.name as "ML" | "Totals" | "Spread",
   };
 
   markSignaled(tokenId);
@@ -328,7 +333,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     netEdge: ev,
     kellyFraction: rawKelly,
   });
-  deps.positions.storePendingSignal(tokenId, ev, rawKelly);
+  deps.positions.storePendingSignal(tokenId, ev, rawKelly, bet.market.name as "ML" | "Totals" | "Spread");
 
   log.info(
     `SIGNAL BUY: ${slug} ${size} @ ${bidPrice.toFixed(4)} edge=${(ev * 100).toFixed(1)}% kelly=${(rawKelly * 100).toFixed(1)}%`,
@@ -449,25 +454,48 @@ function resolveLineMarket(
   const gammaType = bet.market.name === "Totals" ? "totals" : "spreads";
   const side = bet.betSide.toLowerCase();
 
-  // Find the Gamma market with matching type and line
-  // Odds API hdp and Gamma line should match directly, but for spreads
-  // the sign may differ (Odds API from home perspective, Gamma may negate).
+  if (gammaType === "totals") {
+    // Gamma totals: one market per line, outcomes[0]="Over" (YES), outcomes[1]="Under" (NO).
+    // Odds API betSide: "home" = Over, "away" = Under.
+    const tokenSide: "YES" | "NO" = side === "home" ? "YES" : "NO";
+    for (const market of resolved.markets) {
+      if (market.sportsMarketType !== "totals") continue;
+      if (market.line == null) continue;
+      if (market.line !== hdp && market.line !== -hdp) continue;
+      const tokenId =
+        tokenSide === "YES" ? market.tokenIds.yes : market.tokenIds.no;
+      return { tokenId, tokenSide, market };
+    }
+    log.warn(
+      `No totals market with line=${hdp} for bet ${bet.id} in slug=${resolved.slug}`,
+    );
+    return null;
+  }
+
+  // Spreads: Gamma has one market per team per line (e.g. "Austin FC (-1.5)" and
+  // "St. Louis City SC (-1.5)" are separate markets, both with line=-1.5).
+  // Match by team name in groupItemTitle; YES token = the covering team (outcomes[0]).
+  const betTeam = side === "home" ? bet.event?.home : bet.event?.away;
+  if (!betTeam) {
+    log.warn(`No event team for spread bet ${bet.id}`);
+    return null;
+  }
+  const betWords = extractWords(betTeam);
+
   for (const market of resolved.markets) {
-    if (market.sportsMarketType !== gammaType) continue;
+    if (market.sportsMarketType !== "spreads") continue;
     if (market.line == null) continue;
     if (market.line !== hdp && market.line !== -hdp) continue;
-
-    // Totals: betSide "home" = Over (YES), "away" = Under (NO)
-    // Spreads: betSide "home" = home covers (YES), "away" = away covers (NO)
-    const tokenSide: "YES" | "NO" = side === "home" ? "YES" : "NO";
-    const tokenId =
-      tokenSide === "YES" ? market.tokenIds.yes : market.tokenIds.no;
-
-    return { tokenId, tokenSide, market };
+    if (!market.groupItemTitle) continue;
+    const titleWords = extractWords(market.groupItemTitle);
+    if (fuzzyTeamMatch(betWords, titleWords)) {
+      // YES = covering team (outcomes[0] = groupItemTitle team)
+      return { tokenId: market.tokenIds.yes, tokenSide: "YES", market };
+    }
   }
 
   log.warn(
-    `No ${gammaType} market with line=${hdp} for bet ${bet.id} in slug=${resolved.slug}`,
+    `No spreads market for team=${betTeam} line=${hdp} bet ${bet.id} in slug=${resolved.slug}`,
   );
   return null;
 }
