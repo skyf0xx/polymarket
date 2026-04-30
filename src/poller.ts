@@ -11,7 +11,7 @@ import { executeSignal } from "./executor.js";
 import type { ClobClient } from "@polymarket/clob-client-v2";
 import type { OrderTracker } from "./order-tracker.js";
 import type { PositionTracker } from "./position-tracker.js";
-import type { TradeSignal } from "./types.js";
+import type { MarketType, TradeSignal } from "./types.js";
 
 const log = createLogger("poller");
 
@@ -40,6 +40,7 @@ interface ValueBetMarket {
   home?: string;
   max?: number;
   name: string;
+  label?: string; // Player name for some player-prop variants (e.g. football "Player Passes")
 }
 
 interface ValueBet {
@@ -177,23 +178,40 @@ async function poll(deps: PollerDeps): Promise<void> {
   }
   _activeValueBetSlugs = activeSlugs;
 
-  // Process each bet (ML, Totals, Spread supported)
+  // Process each bet (ML, Totals, Spread, Player Props supported)
   for (const bet of bets) {
-    const mktName = bet.market.name;
-    if (mktName !== "ML" && mktName !== "Totals" && mktName !== "Spread") {
+    const mt = classifyMarket(bet.market.name);
+    if (!mt) {
+      const mktName = bet.market.name;
       if (!unknownMarketTypesLogged.has(mktName)) {
         unknownMarketTypesLogged.add(mktName);
-        logUnknownMarket(mktName, bet.id);
+        logUnknownMarket(mktName, bet.id, {
+          slug: extractSlug(bet),
+          betSide: bet.betSide,
+          market: bet.market,
+          event: bet.event,
+          href: bet.bookmakerOdds.href,
+        });
       }
       continue;
     }
-    await processBet(deps, bet);
+    await processBet(deps, bet, mt);
   }
+}
+
+/** Map an Odds API market.name to our internal MarketType, or null if unsupported. */
+function classifyMarket(name: string): MarketType | null {
+  if (name === "ML") return "ML";
+  if (name === "Totals") return "Totals";
+  if (name === "Spread") return "Spread";
+  // NBA shape: "Player Props - Josh Hart (Points)"
+  if (name.startsWith("Player Props -")) return "PlayerProp";
+  return null;
 }
 
 // -- Process a single value bet -----------------------------------------------
 
-async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
+async function processBet(deps: PollerDeps, bet: ValueBet, marketType: MarketType): Promise<void> {
   const slug = extractSlug(bet);
   if (!slug) {
     log.debug(`No href in value bet ${bet.id}, skipping`);
@@ -244,7 +262,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   }
 
   // Find the right market and token for this bet
-  const match = resolveToken(bet, resolved);
+  const match = resolveToken(bet, resolved, marketType);
   if (!match) {
     log.warn(`Could not resolve token for bet ${bet.id} in slug=${slug}`);
     return;
@@ -336,7 +354,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     edge: ev,
     kellyFraction: rawKelly,
     reason: "value_bet_confirmed",
-    marketType: bet.market.name as "ML" | "Totals" | "Spread",
+    marketType,
   };
 
   markSignaled(tokenId);
@@ -353,7 +371,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     netEdge: ev,
     kellyFraction: rawKelly,
   });
-  deps.positions.storePendingSignal(tokenId, ev, rawKelly, bet.market.name as "ML" | "Totals" | "Spread");
+  deps.positions.storePendingSignal(tokenId, ev, rawKelly, marketType);
 
   log.info(
     `SIGNAL BUY: ${slug} ${size} @ ${bidPrice.toFixed(4)} edge=${(ev * 100).toFixed(1)}% kelly=${(rawKelly * 100).toFixed(1)}%`,
@@ -481,14 +499,10 @@ export function canonicalEventSlug(slug: string): string {
 function resolveToken(
   bet: ValueBet,
   resolved: ResolvedMarket,
+  marketType: MarketType,
 ): { tokenId: string; tokenSide: "YES" | "NO"; market: ParsedMarket } | null {
-  const mktName = bet.market.name;
-
-  // Totals and Spread bets resolve by market type + line, not team name
-  if (mktName === "Totals" || mktName === "Spread") {
-    return resolveLineMarket(bet, resolved);
-  }
-
+  if (marketType === "PlayerProp") return resolvePlayerProp(bet, resolved);
+  if (marketType === "Totals" || marketType === "Spread") return resolveLineMarket(bet, resolved);
   return resolveMoneyline(bet, resolved);
 }
 
@@ -550,6 +564,99 @@ function resolveLineMarket(
     `No spreads market for team=${betTeam} line=${hdp} bet ${bet.id} in slug=${resolved.slug}`,
   );
   return null;
+}
+
+/**
+ * Resolve player-prop bets (Points / Rebounds / Assists / etc.).
+ *
+ * Two Odds API shapes are supported:
+ *   1. NBA-style: market.name = "Player Props - Josh Hart (Points)", betSide = "home"|"away"
+ *      → home = Over (YES), away = Under (NO)
+ *   2. Football-style: market.name = "Player Passes" (or "Player Shots", …),
+ *      market.label = "{Player Name}", betSide = "over"|"under"
+ *
+ * Polymarket player-prop market shape:
+ *   sportsMarketType: "points" | "rebounds" | "assists" | "player_passes" | …
+ *   groupItemTitle:   "Josh Hart: Points O/U 11.5"
+ *   outcomes:         ["Yes","No"]   (Yes = Over)
+ */
+function resolvePlayerProp(
+  bet: ValueBet,
+  resolved: ResolvedMarket,
+): { tokenId: string; tokenSide: "YES" | "NO"; market: ParsedMarket } | null {
+  const line = bet.market.hdp;
+  if (line == null) {
+    log.warn(`No hdp for player-prop bet ${bet.id}`);
+    return null;
+  }
+
+  const parsed = parsePlayerPropName(bet);
+  if (!parsed) {
+    log.warn(`Could not parse player+stat from market.name=${bet.market.name} bet ${bet.id}`);
+    return null;
+  }
+  const { player, stat } = parsed;
+
+  const tokenSide = playerPropTokenSide(bet.betSide);
+  if (!tokenSide) {
+    log.warn(`Unknown betSide=${bet.betSide} for player-prop bet ${bet.id}`);
+    return null;
+  }
+
+  const playerWords = extractWords(player);
+
+  for (const market of resolved.markets) {
+    // sportsMarketType is the Gamma stat key (points/rebounds/assists/…). Match by token-equivalent
+    // forms so "Points" → "points" and Odds API stat names like "Player Passes" → "player_passes".
+    if (!market.sportsMarketType) continue;
+    if (!statMatches(market.sportsMarketType, stat)) continue;
+    if (market.line !== line) continue;
+    if (!market.groupItemTitle) continue;
+
+    const titleWords = extractWords(market.groupItemTitle.split(":")[0] ?? market.groupItemTitle);
+    if (fuzzyTeamMatch(playerWords, titleWords)) {
+      const tokenId = tokenSide === "YES" ? market.tokenIds.yes : market.tokenIds.no;
+      return { tokenId, tokenSide, market };
+    }
+  }
+
+  log.warn(
+    `No player-prop market for player=${player} stat=${stat} line=${line} bet ${bet.id} in slug=${resolved.slug}`,
+  );
+  return null;
+}
+
+/** Pull `{ player, stat }` from a value-bet's market metadata, handling both API shapes. */
+function parsePlayerPropName(bet: ValueBet): { player: string; stat: string } | null {
+  const name = bet.market.name;
+
+  // NBA: "Player Props - Josh Hart (Points)"
+  const nbaMatch = name.match(/^Player Props\s*-\s*(.+?)\s*\((.+?)\)\s*$/);
+  if (nbaMatch) {
+    return { player: nbaMatch[1].trim(), stat: nbaMatch[2].trim() };
+  }
+
+  // Football: market.name = "Player Passes" / "Player Shots" / …, label = "{Player}"
+  if (bet.market.label && name.toLowerCase().startsWith("player ")) {
+    return { player: bet.market.label, stat: name.replace(/^Player\s+/i, "").trim() };
+  }
+
+  return null;
+}
+
+/** Map Odds API betSide → token side for over/under markets (YES = Over). */
+function playerPropTokenSide(betSide: string): "YES" | "NO" | null {
+  const s = betSide.toLowerCase();
+  if (s === "home" || s === "over") return "YES";
+  if (s === "away" || s === "under") return "NO";
+  return null;
+}
+
+/** Compare a Gamma sportsMarketType ("points") to an Odds API stat ("Points" / "Player Passes"). */
+function statMatches(gammaType: string, oddsStat: string): boolean {
+  const a = gammaType.toLowerCase().replace(/[\s_-]+/g, "");
+  const b = oddsStat.toLowerCase().replace(/[\s_-]+/g, "");
+  return a === b;
 }
 
 /** Resolve moneyline bets (ML + draw) by team name matching. */

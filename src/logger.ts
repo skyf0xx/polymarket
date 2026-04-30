@@ -70,9 +70,22 @@ function log(
   }
 }
 
-export function logUnknownMarket(marketName: string, betId: string): void {
+/**
+ * Persist a sample of an unsupported value-bet so we can design a resolver later.
+ * Caller should dedupe by marketName per process — this writes whatever it gets.
+ */
+export function logUnknownMarket(
+  marketName: string,
+  betId: string,
+  sample?: Record<string, unknown>,
+): void {
   try {
-    const entry = { ts: new Date().toISOString(), marketName, betId };
+    const entry = {
+      ts: new Date().toISOString(),
+      marketName,
+      betId,
+      ...(sample ?? {}),
+    };
     appendFileSync(UNKNOWN_MARKETS_FILE, JSON.stringify(entry) + "\n");
   } catch {
     // Swallow
