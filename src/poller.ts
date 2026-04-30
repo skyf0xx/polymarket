@@ -269,7 +269,20 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   // Position cap: skip if already at or above per-market or per-event limit
   const bankroll = deps.getBankroll();
   const existingPosition = deps.positions.getPositionCost(tokenId);
+  const restingBuyNotional = deps.orders.getTokenNotional(tokenId);
   const existingEventExposure = deps.positions.getEventExposure(slug);
+
+  // Position-aware entry gate: a persistent value-bet stays in the API for many polls.
+  // Each poll is the SAME edge, not a new opportunity. Once we have any position OR
+  // any resting BUY on this token, let exits manage it — don't keep stacking.
+  // The 1 USDC threshold tolerates rounding noise from partial fills near zero.
+  if (existingPosition + restingBuyNotional >= 1) {
+    log.debug(
+      `Already engaged ${tokenId} (position=$${existingPosition.toFixed(2)}, resting=$${restingBuyNotional.toFixed(2)}), skipping`,
+    );
+    return;
+  }
+
   const maxPosition = bankroll * config.maxPositionPct;
   const maxEvent = bankroll * config.maxEventPct;
   const remainingMarketRoom = Math.max(0, maxPosition - existingPosition);
