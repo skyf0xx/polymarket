@@ -390,8 +390,15 @@ async function fetchAndCacheEvent(
       return null;
     }
 
+    // Polymarket splits some games into a parent event (ML/draw) and a child
+    // "-more-markets" event (Spreads/Totals). The Odds API only references the
+    // parent slug, so fetch children via documented parent_event_id link and
+    // merge their markets into the cached ResolvedMarket.
+    const childEvents = await fetchChildEvents(event.id);
+    const allGammaMarkets = [...event.markets, ...childEvents.flatMap((e) => e.markets ?? [])];
+
     const markets: ParsedMarket[] = [];
-    for (const m of event.markets) {
+    for (const m of allGammaMarkets) {
       const outcomes = safeJsonParse<string[]>(m.outcomes, []);
       const tokenIds = safeJsonParse<string[]>(m.clobTokenIds, []);
       if (outcomes.length < 2 || tokenIds.length < 2) continue;
@@ -410,12 +417,27 @@ async function fetchAndCacheEvent(
 
     const resolved: ResolvedMarket = { slug, markets };
     slugCache.set(slug, resolved);
-    log.info(`Cached event slug=${slug} with ${markets.length} market(s)`);
+    log.info(
+      `Cached event slug=${slug} with ${markets.length} market(s) (parent + ${childEvents.length} child)`,
+    );
     return resolved;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log.warn(`Gamma fetch error for slug=${slug}: ${msg}`);
     return null;
+  }
+}
+
+/** Fetch child events linked via parentEventId. Returns [] if none or on error. */
+async function fetchChildEvents(parentId: string): Promise<GammaEvent[]> {
+  try {
+    const url = `${config.gammaApiUrl}/events?parent_event_id=${parentId}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = (await res.json()) as GammaEvent[];
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
   }
 }
 
