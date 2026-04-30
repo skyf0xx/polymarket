@@ -168,11 +168,12 @@ async function poll(deps: PollerDeps): Promise<void> {
   }
   log.debug(`Fetched ${bets.length} value bet(s)`);
 
-  // Update active slugs for exit logic
+  // Update active slugs for exit logic. Use canonical form (no "-more-markets")
+  // so it matches the eventSlug stored on positions hydrated from the Data API.
   const activeSlugs = new Set<string>();
   for (const bet of bets) {
     const slug = extractSlug(bet);
-    if (slug) activeSlugs.add(slug);
+    if (slug) activeSlugs.add(canonicalEventSlug(slug));
   }
   _activeValueBetSlugs = activeSlugs;
 
@@ -256,8 +257,11 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
     return;
   }
 
-  if (isSlugStopLossCooled(slug)) {
-    log.debug(`Stop-loss slug cooldown active for ${slug}, skipping`);
+  // Use canonical form: markStopLoss is called with position.slug (canonical from
+  // Data API). The poller's local `slug` carries the "-more-markets" suffix.
+  const canonicalSlug = canonicalEventSlug(slug);
+  if (isSlugStopLossCooled(canonicalSlug)) {
+    log.debug(`Stop-loss slug cooldown active for ${canonicalSlug}, skipping`);
     return;
   }
 
@@ -270,7 +274,7 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
   const bankroll = deps.getBankroll();
   const existingPosition = deps.positions.getPositionCost(tokenId);
   const restingBuyNotional = deps.orders.getTokenNotional(tokenId);
-  const existingEventExposure = deps.positions.getEventExposure(slug);
+  const existingEventExposure = deps.positions.getEventExposure(canonicalSlug);
 
   // Position-aware entry gate: a persistent value-bet stays in the API for many polls.
   // Each poll is the SAME edge, not a new opportunity. Once we have any position OR
@@ -337,8 +341,11 @@ async function processBet(deps: PollerDeps, bet: ValueBet): Promise<void> {
 
   markSignaled(tokenId);
 
-  // Register token info for UserStream fill resolution
-  tokenInfoMap.set(tokenId, { slug, side: tokenSide });
+  // Register token info for UserStream fill resolution. Store canonical event slug
+  // (no "-more-markets") so the position's slug matches what Data API will hydrate
+  // and what activeValueBetSlugs holds — otherwise exit logic loses the edge match
+  // on the first maintenance cycle and fires underwater_persistence on a live signal.
+  tokenInfoMap.set(tokenId, { slug: canonicalEventSlug(slug), side: tokenSide });
 
   deps.orders.storeSignal(tokenId, {
     tokenSide,
@@ -435,8 +442,18 @@ function extractSlug(bet: ValueBet): string | null {
   const href = bet.bookmakerOdds.href;
   if (!href) return null;
   // href = "https://polymarket.com/event/nba-atl-bkn-2026-04-03"
+  // or    "https://polymarket.com/event/nor-kbk-ham-2026-05-03-more-markets"
+  // The "-more-markets" variant is a DISTINCT Gamma event (with Spreads/Totals).
+  // We keep the suffix here for Gamma fetch + slugCache lookup; downstream consumers
+  // that need to compare against Data API positions canonicalize via canonicalEventSlug.
   const parts = href.split("/");
   return parts[parts.length - 1] || null;
+}
+
+/** Canonical event slug for matching against Data API positions, which always
+ *  use the base slug without "-more-markets". Used by activeValueBetSlugs. */
+export function canonicalEventSlug(slug: string): string {
+  return slug.replace(/-more-markets$/, "");
 }
 
 function resolveToken(
