@@ -1,6 +1,8 @@
 // src/types.ts
 // Shared interfaces for the value-bet bot.
 
+export type MarketType = "ML" | "Totals" | "Spread" | "PlayerProp";
+
 // -- Position Tracking --------------------------------------------------------
 
 export interface Position {
@@ -14,7 +16,7 @@ export interface Position {
   edgeAtEntry?: number;
   kellyAtEntry?: number;
   exitReason?: string;
-  marketType?: "ML" | "Totals" | "Spread";
+  marketType?: MarketType;
 }
 
 // -- Trade Signals ------------------------------------------------------------
@@ -29,7 +31,7 @@ export interface TradeSignal {
   edge: number;
   kellyFraction: number;
   reason: "value_bet_confirmed" | "exit_signal";
-  marketType?: "ML" | "Totals" | "Spread";
+  marketType?: MarketType;
 }
 
 // -- Logger -------------------------------------------------------------------

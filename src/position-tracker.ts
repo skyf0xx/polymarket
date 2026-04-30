@@ -12,7 +12,7 @@ import { writeFileSync, readFileSync, existsSync, renameSync } from "fs";
 import { join } from "path";
 import { config } from "./config.js";
 import { createLogger } from "./logger.js";
-import type { Position } from "./types.js";
+import type { MarketType, Position } from "./types.js";
 
 const log = createLogger("positions");
 
@@ -28,7 +28,7 @@ interface PositionMeta {
   kellyAtEntry: number | null;
   openedAt: number;
   noEdgeChecks?: number;
-  marketType?: "ML" | "Totals" | "Spread";
+  marketType?: MarketType;
 }
 
 function loadSnapshot(): Map<string, PositionMeta> {
@@ -93,10 +93,10 @@ export interface RedeemablePosition {
 export class PositionTracker {
   private positions = new Map<string, Position>();
   private redeemablePositions = new Map<string, RedeemablePosition>(); // keyed by tokenId
-  private pendingSignals = new Map<string, { edgeAtEntry: number; kellyAtEntry: number; marketType?: "ML" | "Totals" | "Spread" }>(); // keyed by tokenId
+  private pendingSignals = new Map<string, { edgeAtEntry: number; kellyAtEntry: number; marketType?: MarketType }>(); // keyed by tokenId
 
   /** Store signal metadata before order execution so it survives reconnects and catch-up replays. */
-  storePendingSignal(tokenId: string, edgeAtEntry: number, kellyAtEntry: number, marketType?: "ML" | "Totals" | "Spread"): void {
+  storePendingSignal(tokenId: string, edgeAtEntry: number, kellyAtEntry: number, marketType?: MarketType): void {
     this.pendingSignals.set(tokenId, { edgeAtEntry, kellyAtEntry, marketType });
   }
 
